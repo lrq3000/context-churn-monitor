@@ -1,8 +1,8 @@
 {
   "name": "context-churn-monitor-ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "metadata": {
-    "version": "0.1.1",
+    "version": "0.1.2",
     "creation": "2026-11-03",
     "last_updated": "2026-11-06"
   },

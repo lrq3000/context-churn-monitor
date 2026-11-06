@@ -38,7 +38,7 @@ Merge this entry into the desired user-wide or project-local `opencode.json(c)`,
 
 `analysisModel` is optional; omit it if only session-model or OpenChamber analysis is wanted. V2 reloads configuration; `/reload` forces reload when needed. Plugin setup is location-scoped and lazy until a session initializes. Check the host's plugin listing and a new session before concluding that discovery failed.
 
-Default data directory: `CONTEXT_MONITOR_DATA`, otherwise `~/.local/share/context-churn-monitor`. Each project directory gets a SHA-256-derived database name and `<hash>.backend.json`. The descriptor identifies this listener instance and contains its bearer secret. A restarted backend has a new identity and requires re-pairing.
+Default data directory: `CONTEXT_MONITOR_DATA`, otherwise `~/.local/share/context-churn-monitor`. Each project directory gets a SHA-256-derived database name and `<hash>.backend.json`. The descriptor identifies this listener instance and contains its bearer secret. On startup, the OS atomically selects and binds a free loopback port (`listen(0)`), then the backend publishes its current address and identity to that descriptor. An occupied old port does not prevent startup on another port.
 
 ### Codex
 
@@ -62,9 +62,13 @@ The SDK service bridge transports request and response bodies as text. The panel
 
 Open **Context Churn Monitor** from the right-hand toolbar, expand **Connect monitoring backend**, enter the absolute descriptor path for the active project, and select **Pair backend**. The service validates loopback origin, project directory, credentials and instance identity. Pairing credentials remain in the service's `~/.local/share/context-churn-monitor/gui-pairings.json`, not in the iframe or conversation.
 
+Release 0.1.2 retains that explicitly selected descriptor path across service reloads. Before each request, it rereads the bounded descriptor and checks the authenticated listener identity, following backend restarts and port changes automatically. Equivalent Windows project case/slash spellings share a pairing; POSIX project case remains significant. Missing, malformed, oversized or wrong-project replacements fail closed rather than using cached credentials or scanning ports. Once the backend is available again, the next independent panel poll reconnects. Failed POST requests are never replayed; a lost response reports an unknown outcome so that analysis still requires fresh explicit consent.
+
+Older snapshot-only pairings work while their original backend is healthy. If an upgraded installation reports **Legacy pairing**, use **Pair backend** once with the current descriptor to store its path. Future backend restarts then reconnect automatically. If you move the descriptor itself or change the backend data directory, explicitly pair its new path.
+
 The **Context Churn Monitor** panel displays the full monitoring interface on the right, beside the central conversation and prompt input. Its `panel.entry` provides this native side panel; no `page` contribution is declared, so it adds no full-page shortcut to the left sidebar. The status frame follows the active session, shows live and completed-turn metrics and provides **View steps**, which opens the same right-hand panel. The status source API cannot provide active-session identity, so this extension intentionally uses the supported status frame and native header controls.
 
-After replacing a folder installation, reload the OpenChamber window to refresh its cached extension names and entry points. If rebuilding the backend changes its listener identity, pair the current descriptor again.
+After replacing a folder installation, reload its OpenChamber extension service and window to refresh cached code, names and entry points. A backend restart at the same paired descriptor path needs no further pairing.
 
 ## Accounting and settings
 
@@ -117,13 +121,13 @@ Contracts consulted in November 2026: [OpenCode V2 plugins](https://opencode.ai/
 
 ## Source version and date records
 
-The backend package, portable manifest and independently installable UI share release version `0.1.1`. Their native versions and package-lock mirrors are synchronized. The diagnostic skill, settings schema and TypeScript configuration initialize their own metadata at `1.0.0`; these values are artifact revisions, not host API or settings-schema versions. All seven source records use creation `2026-11-03` and last update `2026-11-06`. For each of `package.json`, `openchamber/package.json`, `plugin.json`, `config.schema.json`, `tsconfig.json`, `hooks/hooks.json` and `skills/context-churn-diagnostics/SKILL.md`, the creation date is the oldest credible filesystem birth/Git date after normalization to UTC. The compatible packaging/metadata correction applies one patch increment to the existing `0.1.0` package versions and initializes previously unversioned artifacts once.
+The backend package, portable manifest and independently installable UI share release version `0.1.2`. Their native versions and package-lock mirrors are synchronized. The diagnostic skill, settings schema and TypeScript configuration retain their own metadata at `1.0.0`; these values are artifact revisions, not host API or settings-schema versions. All seven source records use creation `2026-11-03` and last update `2026-11-06`. For each of `package.json`, `openchamber/package.json`, `plugin.json`, `config.schema.json`, `tsconfig.json`, `hooks/hooks.json` and `skills/context-churn-diagnostics/SKILL.md`, the creation date is the oldest credible filesystem birth/Git date after normalization to UTC. The compatible reconnection correction applies one patch increment from `0.1.1` to `0.1.2`; untouched artifact revisions and the same-day update dates are preserved.
 
 The [portable manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) rejects a root `metadata` property; arbitrary root metadata in the hook file is not an established host contract. The user-approved records for those two files therefore live here, outside their runtime configuration. The hook record was added on the recorded update date; hook commands themselves were not changed by this revision.
 
 ```json
 {
-  "plugin.json": { "metadata": { "version": "0.1.1", "creation": "2026-11-03", "last_updated": "2026-11-06" } },
+  "plugin.json": { "metadata": { "version": "0.1.2", "creation": "2026-11-03", "last_updated": "2026-11-06" } },
   "hooks/hooks.json": { "metadata": { "version": "1.0.0", "creation": "2026-11-03", "last_updated": "2026-11-06" } }
 }
 ```

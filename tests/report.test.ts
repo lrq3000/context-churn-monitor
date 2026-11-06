@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer, type RequestListener, type Server } from 'node:http';
 import { Store } from '../src/storage/store.js';
 import { Backend } from '../src/reports/backend.js';
 import { Bridge } from '../src/gui/bridge.js';
@@ -84,4 +85,125 @@ test('explicit backend pairing rejects remote origins and mismatched directories
     writeFileSync(remote, JSON.stringify({ ...backend.descriptor, url: 'https://example.com' }));
     await assert.rejects(bridge.pair('/project', remote), /loopback/i);
   } finally { await backend.close(); store.close(); }
+});
+
+async function listener(handler: RequestListener, port = 0): Promise<Server> {
+  const server = createServer(handler);
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  return server;
+}
+
+async function closeListener(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+}
+
+test('a persisted bridge follows repeated backend restarts while other processes occupy the old ports', async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-restart-'));
+  const path = join(root, 'backend.json'), pairings = join(root, 'pairings.json');
+  const store = await Store.open(':memory:');
+  store.ingest('retained-session', [{ id: 'u', type: 'turn', turnId: 'u', at: 1 }]);
+  let backend: Backend | undefined = await Backend.start(store, { directory: root, descriptorPath: path });
+  const blockers: Server[] = []; let staleRequests = 0;
+  t.after(async () => { await backend?.close(); for (const server of blockers) await closeListener(server); store.close(); });
+  await new Bridge(pairings).pair(root, path);
+  for (let restart = 0; restart < 2; restart++) {
+    const old = backend!.descriptor;
+    await backend!.close(); backend = undefined;
+    blockers.push(await listener((_request, response) => { staleRequests++; response.writeHead(503).end('{}'); }, Number(new URL(old.url).port)));
+    backend = await Backend.start(store, { directory: root, descriptorPath: path });
+    assert.notEqual(backend.descriptor.url, old.url, 'The backend must bind a free port while the old port is occupied');
+    const restored = new Bridge(pairings);
+    assert.deepEqual(await restored.request(root, '/sessions', 'GET'), ['retained-session']);
+    assert.equal(staleRequests, 0, 'The saved descriptor path must be read before contacting an obsolete listener');
+  }
+});
+
+test('Windows project case and separator variants share a persisted pairing', { skip: process.platform !== 'win32' }, async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-path-'));
+  const path = join(root, 'backend.json'), pairings = join(root, 'pairings.json');
+  const store = await Store.open(':memory:');
+  const backend = await Backend.start(store, { directory: root, descriptorPath: path });
+  t.after(async () => { await backend.close(); store.close(); });
+  await new Bridge(pairings).pair(root.toUpperCase(), path);
+  assert.deepEqual(await new Bridge(pairings).request(root.toLowerCase().replaceAll('\\', '/') + '/', '/sessions', 'GET'), []);
+});
+
+test('descriptor replacements are validated instead of silently using a cached healthy listener', async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-replacement-'));
+  const path = join(root, 'backend.json');
+  const store = await Store.open(':memory:');
+  const backend = await Backend.start(store, { directory: root, descriptorPath: path });
+  t.after(async () => { await backend.close(); store.close(); });
+  const bridge = new Bridge(join(root, 'pairings.json'));
+  await bridge.pair(root, path);
+  for (const invalid of [
+    { text: JSON.stringify({ ...backend.descriptor, directory: join(root, 'another-project') }), error: /directory|project/i },
+    { text: JSON.stringify({ ...backend.descriptor, url: 'https://example.invalid' }), error: /loopback/i },
+    { text: '{unfinished', error: /descriptor/i },
+    { text: ' '.repeat(16385), error: /descriptor/i },
+    { text: JSON.stringify({ ...backend.descriptor, instance: 'different-instance' }), error: /instance|identity/i },
+  ]) {
+    writeFileSync(path, invalid.text);
+    await assert.rejects(bridge.request(root, '/sessions', 'GET'), invalid.error);
+  }
+  writeFileSync(path, JSON.stringify(backend.descriptor));
+  renameSync(path, join(root, 'descriptor-away.json'));
+  await assert.rejects(bridge.request(root, '/sessions', 'GET'), /descriptor/i);
+});
+
+test('legacy pairings work while healthy and explain how to repair a stale listener', async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-legacy-'));
+  const pairings = join(root, 'pairings.json');
+  const store = await Store.open(':memory:');
+  let backend: Backend | undefined = await Backend.start(store, { directory: root });
+  t.after(async () => { await backend?.close(); store.close(); });
+  writeFileSync(pairings, JSON.stringify({ [root]: backend.descriptor }));
+  const bridge = new Bridge(pairings);
+  assert.deepEqual(await bridge.request(root, '/sessions', 'GET'), []);
+  await backend.close(); backend = undefined;
+  await assert.rejects(bridge.request(root, '/sessions', 'GET'), /pair.*again|re-pair/i);
+});
+
+test('an old port reused by a different listener cannot receive a forwarded POST', async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-identity-'));
+  const path = join(root, 'backend.json');
+  const store = await Store.open(':memory:');
+  const backend = await Backend.start(store, { directory: root, descriptorPath: path });
+  const bridge = new Bridge(join(root, 'pairings.json'));
+  await bridge.pair(root, path);
+  const old = backend.descriptor;
+  await backend.close(); store.close();
+  let posts = 0;
+  const impostor = await listener((request, response) => {
+    if (request.method === 'POST') posts++;
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ instance: 'unrelated-listener', directory: root }));
+  }, Number(new URL(old.url).port));
+  t.after(() => closeListener(impostor));
+  await assert.rejects(bridge.request(root, '/settings?session=s', 'POST', { span: 7 }), /identity|instance/i);
+  assert.equal(posts, 0);
+});
+
+test('a dropped POST response is never replayed even when a replacement descriptor becomes available', async t => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'pair-no-replay-'));
+  const path = join(root, 'backend.json');
+  const store = await Store.open(':memory:');
+  store.ingest('replacement-session', [{ id: 'u', type: 'turn', turnId: 'u', at: 1 }]);
+  let replacementPosts = 0, firstPosts = 0;
+  const replacement = await Backend.start(store, { directory: root, extra: async () => { replacementPosts++; return {}; } });
+  const descriptor = { version: 1, url: '', token: 'a'.repeat(64), instance: 'initial-instance', directory: root };
+  const first = await listener((request, response) => {
+    if (request.url === '/health') { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ instance: descriptor.instance, directory: root })); return; }
+    if (request.method === 'POST') { firstPosts++; writeFileSync(path, JSON.stringify(replacement.descriptor)); request.socket.destroy(); return; }
+    response.setHeader('Content-Type', 'application/json'); response.end('[]');
+  });
+  t.after(async () => { await closeListener(first); await replacement.close(); store.close(); });
+  descriptor.url = `http://127.0.0.1:${(first.address() as { port: number }).port}`;
+  writeFileSync(path, JSON.stringify(descriptor));
+  const bridge = new Bridge(join(root, 'pairings.json'));
+  await bridge.pair(root, path);
+  await assert.rejects(bridge.request(root, '/side-effect?session=s', 'POST', { action: 'once' }), /not retried|outcome.*unknown/i);
+  assert.equal(firstPosts, 1);
+  assert.equal(replacementPosts, 0);
+  assert.deepEqual(await bridge.request(root, '/sessions', 'GET'), ['replacement-session']);
 });
