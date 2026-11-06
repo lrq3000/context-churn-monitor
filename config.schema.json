@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "version": "1.0.0",
+    "creation": "2026-11-03",
+    "last_updated": "2026-11-06"
+  },
+  "title": "Context Churn Monitor settings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "span": { "type": "integer", "minimum": 1, "default": 5 },
+    "minSamples": { "type": "integer", "minimum": 1, "default": 3 },
+    "growthThreshold": { "type": "number", "exclusiveMinimum": 0, "default": 40 },
+    "compactionThreshold": { "type": "number", "exclusiveMinimum": 0, "default": 0.3 },
+    "liveGrowth": { "type": "number", "exclusiveMinimum": 0, "default": 80 },
+    "liveCompactions": { "type": "number", "exclusiveMinimum": 0, "default": 2 },
+    "cooldownTurns": { "type": "integer", "minimum": 1, "default": 5 },
+    "rearmTurns": { "type": "integer", "minimum": 1, "default": 2 },
+    "rearmRatio": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "default": 0.8 },
+    "warnings": { "type": "boolean", "default": true },
+    "lookback": { "type": "integer", "minimum": 1, "default": 5 },
+    "inputBudget": { "type": "integer", "minimum": 1, "default": 12000 },
+    "outputBudget": { "type": "integer", "minimum": 1, "default": 3000 }
+  }
+}

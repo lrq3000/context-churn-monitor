@@ -1,0 +1,6 @@
+node_modules/
+dist/
+openchamber/panel/app.js
+openchamber/service.cjs
+*.tsbuildinfo
+test-results/

@@ -1,0 +1,13 @@
+{
+  "description": "Deterministic context growth and applied-compaction monitoring",
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "PreModelRequest": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "PostModelRequest": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "PostCompact": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 5 }] }],
+    "Interrupt": [{ "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/dist/cli.js\" hook", "timeout": 3 }] }]
+  }
+}
