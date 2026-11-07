@@ -100,3 +100,30 @@ test('known synthetic-only activity does not create a user-turn EMA sample', asy
   assert.equal(store.snapshot('s')?.turn?.number, 1);
   store.close();
 });
+
+test('late request completion retains originating evidence without changing another request or its attempts', async () => {
+  const store = await Store.open(':memory:'), adapter = new OpenCodeAdapter(store); let n = 0;
+  const send = (type: string, data: any) => adapter.event({ type: `session.${type}`, data: { sessionID: 's', ...data }, id: `late${++n}`, created: Date.now() + n }, 1000);
+  try {
+    send('inbox.enqueued', { inboxID: 'u1', item: { type: 'user' } }); send('inbox.delivered', { inboxID: 'u1' });
+    send('step.started', { assistantMessageID: 'm0', model: { providerID: 'p', id: 'old' } });
+    send('step.ended', { assistantMessageID: 'm0', tokens: { input: 100, cache: { read: 0, write: 0 } } });
+    send('step.started', { assistantMessageID: 'm1', model: { providerID: 'p', id: 'old' } });
+    adapter.attempt('s', 'http').status = 503;
+    send('inbox.enqueued', { inboxID: 'u2', item: { type: 'user' } }); send('inbox.delivered', { inboxID: 'u2' });
+    send('step.started', { assistantMessageID: 'm2', model: { providerID: 'p', id: 'new' } });
+    adapter.attempt('s', 'http').status = 200;
+    const before = store.snapshot('s')!;
+    send('step.ended', { assistantMessageID: 'm1', tokens: { input: 300, cache: { read: 0, write: 0 } } });
+    assert.deepEqual(store.snapshot('s')!.turn, before.turn);
+    assert.deepEqual(store.snapshot('s')!.step, before.step);
+    const late = store.activities.list('s', { messageId: 'm1' }).items.find(a => a.label === 'Late request result');
+    assert.ok(late);
+    const evidence = JSON.parse(store.activities.detail('s', late.id, 'metadata').text);
+    assert.equal(evidence.model.ref.id, 'old'); assert.equal(evidence.tokens.input, 300); assert.equal(evidence.attempts[0].status, 503);
+    assert.match(store.requestSteps('s', 'm1')[0].gaps.join(' '), /late|out.of.order/i);
+    send('step.ended', { assistantMessageID: 'm2', tokens: { input: 600, cache: { read: 0, write: 0 } } });
+    assert.equal(store.requestSteps('s', 'm2')[0].attempt!.status, 200);
+    assert.equal(store.snapshot('s')!.turn!.steps, 1);
+  } finally { store.close(); }
+});

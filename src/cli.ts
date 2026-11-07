@@ -9,7 +9,7 @@ import { Backend } from './reports/backend.js';
 const root = process.env.CONTEXT_MONITOR_DATA ?? process.env.PLUGIN_DATA ?? join(homedir(), '.local', 'share', 'context-churn-monitor', 'codex');
 const command = process.argv[2];
 try {
-  const store = await Store.open(join(root, 'codex.sqlite'));
+  const store = await Store.open(join(root, 'replay-v2', 'codex.sqlite'));
   if (command === 'hook') {
     const input = JSON.parse(readFileSync(0, 'utf8'));
     const modelWindows = process.env.CONTEXT_MONITOR_MODEL_WINDOWS ? JSON.parse(process.env.CONTEXT_MONITOR_MODEL_WINDOWS) : {};

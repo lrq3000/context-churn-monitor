@@ -13,18 +13,16 @@ export class AnalysisPanel {
   private runButton: ButtonHandle;
 
   constructor(private host: HostClient, private capture: () => AnalysisRequest) {
-    document.querySelector('#analysis')!.innerHTML = `<h2>Optional model analysis</h2><p class="muted">Monitoring and exports never use a model. Analysis uses frozen evidence only after consent; the preview states the selected route and its request limits.</p><div class="toolbar"><label>Analysis model<select id="analysis-mode"><option value="">Choose each time…</option><option value="configured">Configured smaller model</option><option value="session">Session model</option><option value="small">OpenChamber Small Model</option></select></label><div id="analysis-prepare"></div></div><div id="analysis-preview" class="muted"></div><details><summary>Frozen evidence sent to the model</summary><pre id="analysis-evidence" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto"></pre></details><label><input id="analysis-consent" type="checkbox"> I authorize one model request</label><div id="analysis-run" class="buttons"></div><pre id="analysis-result" role="status"></pre>`;
+    document.querySelector('#analysis')!.innerHTML = `<h2>Analyze this activity</h2><div class="toolbar"><label>Analysis model<select id="analysis-mode"><option value="small" selected>OpenChamber Small Model</option><option value="configured">Configured smaller model</option><option value="session">Session model</option></select></label><div id="analysis-prepare"></div></div><div id="analysis-preview" class="muted">Prepare a preview of the frozen evidence and request limits.</div><details><summary>Frozen evidence sent to the model</summary><pre id="analysis-evidence" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto"></pre></details><div id="analysis-run" class="buttons"></div><p class="muted">Clicking Run authorizes this prepared analysis. Monitoring, exports and preparation do not invoke a model.</p><pre id="analysis-result" role="status"></pre>`;
     mountButton(document.querySelector('#analysis-prepare')!, { label: 'Prepare analysis', variant: 'outline', size: 'sm', onClick: () => void this.prepare() });
-    this.runButton = mountButton(document.querySelector('#analysis-run')!, { label: 'Run analysis', variant: 'outline', size: 'sm', disabled: true, onClick: () => void this.run() });
-    this.consent.onchange = () => this.update();
+    this.runButton = mountButton(document.querySelector('#analysis-run')!, { label: 'Run analysis (1 model invocation)', variant: 'outline', size: 'sm', disabled: true, onClick: () => void this.run() });
     document.querySelector('#analysis-mode')!.addEventListener('change', () => this.reset());
   }
 
-  private get consent(): HTMLInputElement { return document.querySelector('#analysis-consent')!; }
   private text(id: string, text: string): void { document.querySelector(`#${id}`)!.textContent = text; }
-  private update(): void { this.runButton.update({ disabled: this.running || !this.job || this.job.status !== 'prepared' || !this.consent.checked }); }
+  private update(): void { this.runButton.update({ disabled: this.running || !this.job || this.job.status !== 'prepared' }); }
   reset(): void {
-    this.epoch++; this.job = undefined; this.request = undefined; this.consent.checked = false;
+    this.epoch++; this.job = undefined; this.request = undefined;
     for (const id of ['analysis-preview', 'analysis-result', 'analysis-evidence']) this.text(id, '');
     this.update();
   }
@@ -45,10 +43,10 @@ export class AnalysisPanel {
   }
 
   private async run(): Promise<void> {
-    if (!this.job || !this.request || !this.consent.checked || this.running || this.job.status !== 'prepared') return;
+    if (!this.job || !this.request || this.running || this.job.status !== 'prepared') return;
     const job = this.job, request = this.request, epoch = this.epoch;
-    this.running = true; job.status = 'consumed'; this.consent.checked = false; this.update();
-    this.text('analysis-result', 'One request authorized. Waiting for the result…');
+    this.running = true; job.status = 'consumed'; this.update();
+    this.text('analysis-result', 'One analysis invocation authorized. Waiting for the result…');
     try {
       const input = { id: job.id, digest: job.digest, consent: true };
       let outcome: AnalysisJob;

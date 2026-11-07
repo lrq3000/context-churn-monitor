@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "context-churn-monitor",
-  "version": "0.1.2",
-  "description": "Portable context-growth and compaction metrics with deterministic diagnostics",
+  "version": "0.2.0",
+  "description": "Context-growth and compaction metrics with readable activity replay and bounded optional analysis",
   "extensions": { "com.openai": { "hooks": "./hooks/hooks.json" } }
 }

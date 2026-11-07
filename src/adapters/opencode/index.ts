@@ -17,7 +17,7 @@ export default Plugin.define({
     const directory = ctx.location.directory;
     const root = options.dataDir ?? process.env.CONTEXT_MONITOR_DATA ?? join(homedir(), '.local', 'share', 'context-churn-monitor');
     const key = createHash('sha256').update(directory).digest('hex').slice(0, 20);
-    const store = await Store.open(join(root, `${key}.sqlite`), options.monitor);
+    const store = await Store.open(join(root, 'replay-v2', `${key}.sqlite`), options.monitor);
     const adapter = new OpenCodeAdapter(store);
     const generation = new OpenCodeGeneration(ctx, store, options.analysisModel);
     await generation.setup();
@@ -46,7 +46,7 @@ export default Plugin.define({
       try { if (JSON.parse(event.frame).type === 'response.create') adapter.attempt(event.sessionID, 'websocket'); }
       catch { /* Non-request control frames are not model attempts. */ }
     });
-    const types = ['session.inbox.enqueued', 'session.inbox.delivered', 'session.step.started', 'session.step.ended', 'session.step.failed', 'session.compaction.ended', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.tool.input.started', 'session.tool.success', 'session.tool.failed', 'model.updated'] as const;
+    const types = ['session.inbox.enqueued', 'session.inbox.delivered', 'session.step.started', 'session.step.ended', 'session.step.failed', 'session.compaction.started', 'session.compaction.delta', 'session.compaction.ended', 'session.compaction.failed', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.tool.input.started', 'session.tool.input.delta', 'session.tool.input.ended', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed', 'session.text.started', 'session.text.delta', 'session.text.ended', 'session.reasoning.started', 'session.reasoning.delta', 'session.reasoning.ended', 'session.skill.activated', 'session.shell.started', 'session.shell.ended', 'session.retry.scheduled', 'session.synthetic', 'session.instructions.updated', 'session.agent.selected', 'session.model.selected', 'session.moved', 'session.revert.committed', 'model.updated'] as const;
     const task = (async () => {
       try {
         for await (const event of ctx.event.subscribe({ types: [...types], signal: controller.signal })) {

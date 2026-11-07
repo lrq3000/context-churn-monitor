@@ -1,5 +1,6 @@
 import type { Store } from '../../storage/store.js';
 import type { Event } from '../../core/types.js';
+import { toolSummary } from '../../core/activity.js';
 
 export interface CodexOptions { modelWindows?: Record<string, number> }
 
@@ -54,6 +55,15 @@ export class CodexAdapter {
           break;
       }
       if (events.length) this.store.ingest(session, events);
+      const state = this.store.snapshot(session);
+      if (state?.turn && input.hook_event_name === 'PostToolUse') {
+        const text = typeof input.tool_response === 'string' ? input.tool_response : JSON.stringify(input.tool_response ?? null);
+        const id = `codex:${identity}`, tool = String(input.tool_name ?? 'tool');
+        this.store.activities.update(session, { id, turnId: state.turn.id, turnNumber: state.turn.number, messageId: state.step?.id, kind: 'tool', tool, ...toolSummary(tool, input.tool_input), status: 'completed', at: Date.now() });
+        this.store.activities.write(session, id, 'input', JSON.stringify(input.tool_input ?? {}));
+        this.store.activities.write(session, id, 'output', text);
+      }
+      if (state?.turn && input.hook_event_name === 'PostCompact') this.store.activities.update(session, { id: `codex:${identity}`, turnId: state.turn.id, turnNumber: state.turn.number, kind: 'compaction', label: 'Compacting context', title: `${input.trigger ?? 'Unknown trigger'} · checkpoint applied`, status: 'completed', at: Date.now() });
       this.store.set(`seen:codex:${session}:${identity}`, true);
     });
     return session;

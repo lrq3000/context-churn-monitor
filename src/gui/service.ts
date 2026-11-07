@@ -21,7 +21,7 @@ const server = createServer(async (request, response) => {
       await bridge.pair(directory, input.path);
       return respond(response, 200, { paired: true });
     }
-    const allowed = ['/sessions', '/snapshot', '/steps', '/settings', '/export', '/analysis/prepare', '/analysis/run', '/analysis/claim', '/analysis/result', '/analysis/read'];
+    const allowed = ['/sessions', '/snapshot', '/steps', '/activities', '/activity', '/settings', '/export', '/analysis/prepare', '/analysis/run', '/analysis/claim', '/analysis/result', '/analysis/read'];
     if (!allowed.includes(url.pathname)) return respond(response, 404, { error: 'Unknown route' });
     respond(response, 200, await bridge.request(directory, url.pathname + url.search, request.method ?? 'GET', input));
   } catch (error) { respond(response, 400, { error: error instanceof Error ? error.message : 'Request failed' }); }

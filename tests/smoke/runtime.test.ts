@@ -109,8 +109,8 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
       assert.equal(prompt.status, 200, await prompt.text());
     } else {
       // Other transports exercise the native generation route; lifecycle accounting is independently covered above with an actual request.
-      const database = readdirSync(join(profile, 'monitor')).find(name => name.endsWith('.sqlite'))!;
-      const store = await Store.open(join(profile, 'monitor', database));
+      const database = readdirSync(join(profile, 'monitor', 'replay-v2')).find(name => name.endsWith('.sqlite'))!;
+      const store = await Store.open(join(profile, 'monitor', 'replay-v2', database));
       store.ingest(sessionID, [{ id: 'u', type: 'turn', turnId: 'u', at: 1 }, { id: 's', type: 'step', stepId: 's', at: 2 }, { id: 'c', type: 'complete', at: 3 }]);
       store.close();
     }
@@ -128,6 +128,15 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
       assert.equal(retrySteps.items[0].attempt.status, 503);
       assert.equal(retrySteps.items[1].attempt.status, 200);
       assert.equal(retrySteps.items[0].growth, null, 'Failed attempts cannot invent occupancy');
+      const database = readdirSync(join(profile, 'monitor', 'replay-v2')).find(name => name.endsWith('.sqlite'))!;
+      const captured = await Store.open(join(profile, 'monitor', 'replay-v2', database), {}, true);
+      try {
+        const activities = captured.activities.list(sessionID).items;
+        assert.ok(activities.some(a => a.kind === 'user' && a.title === 'Reply with one brief local test response.'), 'Native delivered user payload must be captured');
+        const answer = activities.find(a => a.kind === 'text');
+        assert.ok(answer, 'Native text lifecycle must reach the subscribed adapter');
+        assert.equal(captured.activities.detail(sessionID, answer.id, 'output').text, 'Local diagnosis');
+      } finally { captured.close(); }
       for (const missing of [true, false]) {
         omitUsage = missing;
         const nextTurn = snapshot.state.turn.number + 1;

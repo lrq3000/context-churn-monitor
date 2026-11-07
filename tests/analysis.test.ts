@@ -71,3 +71,22 @@ test('OpenChamber claims bind the host route and require a single-use completion
   assert.equal(analysis.read('s', job.id).result, 'Done');
   store.close();
 });
+
+test('frozen analysis includes readable activity evidence and reports truncated bodies within the input allowance', async () => {
+  const { store, analysis } = await fixture();
+  try {
+    for (const [id, kind, title] of [['thinking', 'thinking', 'Inspect descriptor'], ['tool', 'tool', 'npm test'], ['compact', 'compaction', 'Automatic checkpoint']] as const) {
+      store.activities.update('s', { id, turnId: 'u8', turnNumber: 8, messageId: 's8', kind, label: kind, title, status: 'completed', at: 9 });
+      store.activities.write('s', id, 'output', `${id} evidence `.repeat(1000));
+    }
+    const job = await analysis.prepare('s', { mode: 'small' });
+    assert.match(job.prompt, /Inspect descriptor/);
+    assert.match(job.prompt, /npm test/);
+    assert.match(job.prompt, /Automatic checkpoint/);
+    assert.match(job.prompt, /thinking evidence/);
+    assert.ok(job.omitted, 'Bounded activity excerpts must disclose omitted full text');
+    assert.ok(Buffer.byteLength(job.prompt) + 512 <= job.inputBudget);
+    store.activities.write('s', 'tool', 'output', 'LATER OUTPUT');
+    assert.ok(!analysis.read('s', job.id).prompt.includes('LATER OUTPUT'));
+  } finally { store.close(); }
+});

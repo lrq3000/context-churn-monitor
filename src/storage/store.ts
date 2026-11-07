@@ -2,20 +2,22 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { configure, Monitor } from '../core/monitor.js';
 import type { Config, Event, State, Step, Turn } from '../core/types.js';
+import { ActivityStore } from './activities.js';
 
 interface Statement {
   run(...values: any[]): unknown;
   get(...values: any[]): any;
   all(...values: any[]): any[];
 }
-interface Database { exec(sql: string): unknown; prepare(sql: string): Statement; close(): void }
+export interface Database { exec(sql: string): unknown; prepare(sql: string): Statement; close(): void }
 export interface StepQuery { limit?: number; offset?: number; scope?: 'all' | 'current' | 'recent'; lookback?: number; sort?: 'time' | 'growth'; maxTurn?: number }
 
 /** SQLite provides crash-safe transactions and indexed pagination across short-lived Codex processes and long-lived OpenCode plugins. */
 export class Store {
+  readonly activities: ActivityStore;
   private depth = 0;
   private constructor(readonly db: Database, private readonly config: Partial<Config>, readonly path: string, readOnly = false) {
-    if (readOnly) { db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=3000;'); return; }
+    if (readOnly) { db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=3000;'); this.activities = new ActivityStore(db, session => this.snapshot(session), true); return; }
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (session TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(session,id));
@@ -25,6 +27,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS steps_order ON steps(session,turn_number,number);
       CREATE INDEX IF NOT EXISTS steps_growth ON steps(session,growth DESC,turn_number,number);
       CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+    this.activities = new ActivityStore(db, session => this.snapshot(session));
   }
 
   static async open(path: string, config: Partial<Config> = {}, readOnly = false): Promise<Store> {
@@ -116,6 +119,22 @@ export class Store {
 
   turns(session: string, limit = 5): Turn[] {
     return this.db.prepare('SELECT data FROM turns WHERE session=? ORDER BY number DESC LIMIT ?').all(session, Math.max(1, Math.min(200, limit))).reverse().map(row => JSON.parse(row.data));
+  }
+
+  /** An assistant message can contain multiple physical attempts. Prefix range lookup keeps activity pages independent of total session history. */
+  requestSteps(session: string, messageId: string): Step[] {
+    return this.db.prepare('SELECT data FROM steps WHERE session=? AND (id=? OR (id>=? AND id<?)) ORDER BY number LIMIT 200').all(session, messageId, `${messageId}:`, `${messageId};`).map(row => JSON.parse(row.data));
+  }
+
+  /** Late usage cannot be replayed through an incremental reducer without corrupting intervening turns/EMAs. Preserve its original coverage gap and break the next occupancy comparison instead. */
+  requestGap(session: string, messageId: string, reason: string): void {
+    for (const step of this.requestSteps(session, messageId)) {
+      if (!step.gaps.includes(reason) && step.gaps.length < 32) step.gaps.push(reason);
+      step.quality = step.growth === null ? 'unavailable' : 'partial';
+      this.db.prepare('UPDATE steps SET data=? WHERE session=? AND id=?').run(JSON.stringify(step), session, step.id);
+    }
+    const state = this.snapshot(session);
+    if (state) { state.rebase = true; state.revision++; this.db.prepare('UPDATE sessions SET state=? WHERE id=?').run(JSON.stringify(state), session); }
   }
 
   /** Indexed keyset traversal is linear in exported rows; OFFSET would rescan all preceding pages. */

@@ -55,6 +55,26 @@ test('large exports leave the event loop and monitoring writer available', async
   } finally { clearInterval(timer); store.close(); }
 });
 
+test('replay exports every activity and complete paged text with escaped HTML and one measurement notice', async () => {
+  const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'replay-export-'));
+  const store = await Store.open(join(root, 'state.sqlite'));
+  try {
+    store.ingest('s', [{ id: 'u', at: 1, type: 'turn', turnId: 'u' }]);
+    for (let i = 0; i < 205; i++) {
+      store.activities.update('s', { id: `a${i}`, turnId: 'u', turnNumber: 1, kind: 'text', label: 'Response', title: `Answer ${i}`, status: 'completed', at: i });
+      store.activities.write('s', `a${i}`, 'output', i === 204 ? '</pre><script>bad()</script>' + 'long '.repeat(10000) : `body ${i}`);
+    }
+    const json = JSON.parse(readFileSync(await exportReport(store, 's', root, 'json'), 'utf8'));
+    assert.equal(json.activities?.length, 205);
+    assert.equal(json.activities[204].bodies.output, '</pre><script>bad()</script>' + 'long '.repeat(10000));
+    const html = readFileSync(await exportReport(store, 's', root, 'html'), 'utf8');
+    assert.equal((html.match(/data-activity=/g) ?? []).length, 205);
+    assert.ok(!html.includes('<script>bad()'));
+    assert.ok(html.includes('&lt;script&gt;bad()'));
+    assert.equal((html.match(/Growth is measured at model-request boundaries/g) ?? []).length, 1);
+  } finally { store.close(); }
+});
+
 test('a read-only export snapshot remains consistent while another connection ingests a step', async () => {
   const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'export-snapshot-'));
   const path = join(root, 'state.sqlite'); const writer = await Store.open(path);
