@@ -10,7 +10,7 @@ export interface Observation {
 }
 export type Event = { id: string; at: number } & (
   | { type: 'turn'; turnId: string }
-  | { type: 'step'; stepId: string; model?: string }
+  | { type: 'step'; stepId: string; model?: string; capacity?: number }
   | ({ type: 'observe' } & Observation)
   | { type: 'compact'; checkpointId: string; trigger: Trigger; beforeKnown: boolean }
   | { type: 'complete'; interrupted?: boolean }
@@ -48,6 +48,7 @@ export interface Step extends MetricRecord {
   number: number;
   at: number;
   model?: string;
+  capacity?: number;
   evidence: Evidence[];
   attempt?: Attempt;
 }
@@ -64,7 +65,7 @@ export interface Turn extends MetricRecord {
   emaBefore: Ema;
   recoveryBefore?: Record<'growth' | 'compactions', Guard>;
 }
-export interface Alert { id: string; metric: 'growth' | 'compactions'; turn: number; value: number; kind: 'live' | 'ema'; at: number }
+export interface Alert { id: string; metric: 'growth' | 'compactions'; turn: number; value: number; threshold?: number; model?: string; capacity?: number; kind: 'live' | 'ema'; at: number }
 export interface Guard { armed: boolean; lastTurn: number; below: number; recoveredTurn: number }
 export interface State {
   version: 1;
@@ -75,15 +76,12 @@ export interface State {
   ema: Ema;
   guards: Record<'growth' | 'compactions', Guard>;
   alerts: Alert[];
+  alerting?: AlertPolicyState;
   revision: number;
 }
-export interface Config {
+export interface Config extends AlertSettings {
   span: number;
   minSamples: number;
-  growthThreshold: number;
-  compactionThreshold: number;
-  liveGrowth: number;
-  liveCompactions: number;
   cooldownTurns: number;
   rearmTurns: number;
   rearmRatio: number;
@@ -92,3 +90,4 @@ export interface Config {
   inputBudget: number;
   outputBudget: number;
 }
+import type { AlertPolicyState, AlertSettings } from './alerts.js';

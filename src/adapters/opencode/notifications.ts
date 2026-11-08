@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
+import type { ThresholdEvent } from '../../storage/alerts.js';
+export interface NotificationResult { title: string; delivery: ThresholdEvent['delivery'] }
 
 /** Managed OpenChamber supplies this authenticated callback. No callback means console + persisted alerts, not a guessed port. */
 export class OpenChamberNotifications {
   constructor(private directory: string, private title: (session: string, signal: AbortSignal) => Promise<string | undefined>, private environment: NodeJS.ProcessEnv = process.env) {}
 
-  async send(session: string, message: string): Promise<void> {
+  async send(session: string, message: string): Promise<NotificationResult> {
     const callback = this.environment.OPENCHAMBER_AGENT_TOOL_URL, token = this.environment.OPENCHAMBER_AGENT_TOOL_TOKEN;
-    if (!callback || !token) return;
+    if (!callback || !token) return { title: session, delivery: 'unavailable' };
     let thread = session;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -25,8 +27,11 @@ export class OpenChamberNotifications {
       tag: `context-monitor-${createHash('sha256').update(session).update('\0').update(message).digest('hex').slice(0, 32)}`,
     };
     try {
-      await fetch(new URL('/api/notifications/emit', callback), { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(3000) });
-    } catch { /* The persistent alert remains visible even when notification delivery is unavailable. */ }
+      const response = await fetch(new URL('/api/notifications/emit', callback), { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(3000) });
+      if (!response.ok) return { title: thread, delivery: 'unconfirmed' };
+      const result = await response.json() as { delivered?: boolean };
+      return { title: thread, delivery: result.delivered === false ? 'unavailable' : 'host-accepted' };
+    } catch { return { title: thread, delivery: 'unconfirmed' }; /* Retain uncertain outcomes; never infer OS display or retry. */ }
   }
 
   /** Host limits use UTF-16 length; avoid truncating between a surrogate pair and keep controls out of notification labels. */

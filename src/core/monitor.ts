@@ -1,8 +1,9 @@
 import type { Config, Ema, Event, MetricRecord, Observation, State } from './types.js';
+import { AlertPolicy } from './alerts.js';
 
 export const defaults: Config = {
   span: 5, minSamples: 3, growthThreshold: 40, compactionThreshold: 0.30,
-  liveGrowth: 80, liveCompactions: 2, cooldownTurns: 5, rearmTurns: 2,
+  liveGrowth: 80, liveCompactions: 2, minContextWindow: 32000, cooldownTurns: 5, rearmTurns: 2,
   rearmRatio: 0.8, warnings: true, lookback: 5, inputBudget: 12000, outputBudget: 3000,
 };
 
@@ -11,7 +12,7 @@ export function configure(input: Partial<Config> = {}): Config {
   for (const [key, value] of Object.entries(config)) {
     if (key === 'warnings') {
       if (typeof value !== 'boolean') throw new Error('warnings must be boolean');
-    } else if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    } else if (typeof value !== 'number' || !Number.isFinite(value) || (key === 'minContextWindow' ? !Number.isSafeInteger(value) || value < 0 : value <= 0)) {
       throw new Error(`${key} must be a positive finite number`);
     }
   }
@@ -56,7 +57,7 @@ export class Monitor {
     } else if (event.type === 'step') {
       if (!s.turn || s.step?.id === event.stepId) return;
       this.reopen();
-      s.step = { ...metrics(), id: event.stepId, turnId: s.turn.id, turnNumber: s.turn.number, number: ++s.turn.steps, at: event.at, model: event.model, evidence: [] };
+      s.step = { ...metrics(), id: event.stepId, turnId: s.turn.id, turnNumber: s.turn.number, number: ++s.turn.steps, at: event.at, model: event.model, capacity: event.capacity, evidence: [] };
     } else if (event.type === 'observe') {
       this.observe(event);
     } else if (event.type === 'gap') {
@@ -82,7 +83,10 @@ export class Monitor {
       else this.gap('Additional tool evidence omitted from compact step metadata.');
     }
     if (completedAt !== undefined) this.complete(completedAt);
-    this.alert(event.at);
+    const policy = new AlertPolicy(this.config, s.alerting);
+    s.alerts = [...s.alerts, ...policy.accept(event, s)].slice(-20);
+    s.alerting = policy.state;
+    s.guards = { growth: { ...policy.state.guards.growth }, compactions: { ...policy.state.guards.compactions } };
   }
 
   private reopen(): void {
@@ -90,12 +94,6 @@ export class Monitor {
     if (t?.ended !== undefined) {
       // A Stop hook or idle transition can be followed by automatic continuation. Replace that turn's EMA contribution, never feed it twice.
       this.state.ema = { ...t.emaBefore };
-      for (const metric of ['growth', 'compactions'] as const) {
-        const before = t.recoveryBefore?.[metric], current = this.state.guards[metric];
-        // Undo provisional recovery, never a warning already delivered at completion. A late continuation may invalidate a formerly low sample.
-        if (before && current.lastTurn === before.lastTurn) this.state.guards[metric] = { ...before };
-        else if (before) current.recoveredTurn = before.recoveredTurn;
-      }
       delete t.ended;
     }
   }
@@ -152,38 +150,6 @@ export class Monitor {
     }
     s.ema.compactions = next(s.ema.compactions, t.compactions);
     s.ema.compactionSamples++;
-    t.recoveryBefore = { growth: { ...s.guards.growth }, compactions: { ...s.guards.compactions } };
-    for (const metric of ['growth', 'compactions'] as const) {
-      const guard = s.guards[metric];
-      if (guard.recoveredTurn === t.number) continue;
-      guard.recoveredTurn = t.number;
-      const threshold = metric === 'growth' ? this.config.growthThreshold : this.config.compactionThreshold;
-      // Partial lower bounds can trigger warnings, but cannot establish that a problematic metric recovered.
-      const reliable = metric === 'compactions' || t.quality === 'reported' || t.quality === 'estimated';
-      const value = s.ema[metric];
-      guard.below = reliable && value !== null && value < threshold * this.config.rearmRatio ? guard.below + 1 : 0;
-      if (guard.below >= this.config.rearmTurns) guard.armed = true;
-    }
   }
 
-  private alert(at: number): void {
-    const s = this.state, t = s.turn, c = this.config;
-    if (!t || !c.warnings) return;
-    for (const metric of ['growth', 'compactions'] as const) {
-      const guard = s.guards[metric];
-      if (!guard.armed || t.number - guard.lastTurn < c.cooldownTurns) continue;
-      const live = t[metric];
-      const ema = s.ema[metric];
-      const threshold = metric === 'growth' ? c.growthThreshold : c.compactionThreshold;
-      const liveThreshold = metric === 'growth' ? c.liveGrowth : c.liveCompactions;
-      const samples = metric === 'growth' ? s.ema.growthSamples : s.ema.compactionSamples;
-      const kind = live !== null && live >= liveThreshold ? 'live' : samples >= c.minSamples && ema !== null && ema >= threshold ? 'ema' : null;
-      if (!kind) continue;
-      s.alerts.push({ id: `${t.id}:${metric}`, metric, turn: t.number, value: (kind === 'live' ? live : ema)!, kind, at });
-      s.alerts = s.alerts.slice(-20);
-      guard.armed = false;
-      guard.lastTurn = t.number;
-      guard.below = 0;
-    }
-  }
 }

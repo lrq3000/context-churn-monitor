@@ -9,6 +9,8 @@ import type { Config } from '../../core/types.js';
 import { Analysis } from '../../analysis/analysis.js';
 import { OpenCodeGeneration } from '../../analysis/opencode.js';
 import { OpenChamberNotifications } from './notifications.js';
+import { AlertHistory } from '../../storage/alerts.js';
+import { AlertPipeline } from '../../alerts/pipeline.js';
 
 /** A location-scoped plugin uses durable event IDs for deduplication and keeps reports outside session messages. */
 export default Plugin.define({
@@ -18,9 +20,15 @@ export default Plugin.define({
     const directory = ctx.location.directory;
     const root = options.dataDir ?? process.env.CONTEXT_MONITOR_DATA ?? join(homedir(), '.local', 'share', 'context-churn-monitor');
     const key = createHash('sha256').update(directory).digest('hex').slice(0, 20);
-    const store = await Store.open(join(root, 'replay-v2', `${key}.sqlite`), options.monitor);
+    const history = await AlertHistory.open();
+    const store = await Store.open(join(root, 'replay-v2', `${key}.sqlite`), options.monitor, false, { directory, settings: () => history.settings() });
     const adapter = new OpenCodeAdapter(store);
     const notifications = new OpenChamberNotifications(directory, async (sessionID, signal) => (await ctx.session.get({ sessionID }, { signal })).title);
+    const alerts = new AlertPipeline(history, store, directory, event => {
+      console.warn(`[context-monitor] ${event.metric} ${event.value.toFixed(2)} (${event.kind}); session ${event.sessionId}`);
+      return notifications.send(event.sessionId, `${event.metric} threshold reached: ${event.value.toFixed(2)} (${event.kind}); threshold ${event.threshold.toFixed(2)}. Open Context Churn Monitor to inspect steps.`);
+    });
+    await alerts.reconcile();
     const generation = new OpenCodeGeneration(ctx, store, options.analysisModel);
     await generation.setup();
     const analysis = new Analysis(store, { resolve: (mode, session) => generation.resolve(mode, session), generate: job => generation.generate(job) });
@@ -57,19 +65,11 @@ export default Plugin.define({
           try {
             const model = event.type === 'session.step.started' ? event.data.model : undefined;
             adapter.event(event, model ? models.get(`${model.providerID}/${model.id}`) : undefined);
-            const state = store.snapshot(event.data.sessionID);
-            for (const alert of state?.alerts ?? []) {
-              const delivered = `notification:${event.data.sessionID}:${alert.id}`;
-              if (store.get(delivered)) continue;
-              // Persist before sending: an uncertain network outcome must not flood the user with repeat warnings.
-              store.set(delivered, 'attempted');
-              console.warn(`[context-monitor] ${alert.metric} ${alert.value.toFixed(2)} (${alert.kind}); session ${event.data.sessionID}`);
-              await notifications.send(event.data.sessionID, `${alert.metric} threshold reached: ${alert.value.toFixed(2)} (${alert.kind}). Open Context Churn Monitor to inspect steps.`);
-            }
+            await alerts.publishPending();
           } catch (error) { console.error('[context-monitor] Event processing failed', error); }
         }
       } catch (error) { if (!controller.signal.aborted) console.error('[context-monitor] Event subscription ended', error); }
     })();
-    return async () => { controller.abort(); await Promise.all([hook.dispose(), requestHook.dispose(), responseHook.dispose(), socketHook.dispose()]); await task; await backend.close(); await generation.dispose(); store.close(); };
+    return async () => { controller.abort(); await Promise.all([hook.dispose(), requestHook.dispose(), responseHook.dispose(), socketHook.dispose()]); await task; await backend.close(); await generation.dispose(); store.close(); history.close(); };
   },
 });

@@ -9,13 +9,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createServer as httpServer } from 'node:http';
 import { body, respond } from '../../src/reports/http.js';
 import { Store } from '../../src/storage/store.js';
+import { AlertHistory } from '../../src/storage/alerts.js';
 
 const root = process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir();
 
 test('built Codex hook CLI processes a real stdin payload without injecting context', () => {
   const data = mkdtempSync(join(root, 'codex-smoke-'));
   for (const hook_event_name of ['UserPromptSubmit', 'PreModelRequest', 'PostModelRequest', 'Stop']) {
-    const run = spawnSync(process.execPath, ['dist/cli.js', 'hook'], { encoding: 'utf8', env: { ...process.env, CONTEXT_MONITOR_DATA: data, CONTEXT_MONITOR_MODEL_WINDOWS: '{"test":1000}' }, input: JSON.stringify({ session_id: 'smoke', turn_id: 'u', model: 'test', hook_event_name, token_usage: { input_tokens: 300 } }) });
+    const run = spawnSync(process.execPath, ['dist/cli.js', 'hook'], { encoding: 'utf8', env: { ...process.env, CONTEXT_MONITOR_DATA: data, CONTEXT_MONITOR_ALERTS_PATH: join(data, 'alerts.sqlite'), CONTEXT_MONITOR_MODEL_WINDOWS: '{"test":1000}' }, input: JSON.stringify({ session_id: 'smoke', turn_id: 'u', model: 'test', hook_event_name, token_usage: { input_tokens: 300 } }) });
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(JSON.parse(run.stdout), {});
   }
@@ -76,7 +77,9 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
   await new Promise<void>(r => listener.listen(0, '127.0.0.1', r));
   const port = (listener.address() as { port: number }).port;
   await new Promise<void>(r => listener.close(() => r()));
-  const env = { ...process.env, XDG_CONFIG_HOME: join(profile, 'config'), XDG_DATA_HOME: join(profile, 'data'), XDG_STATE_HOME: join(profile, 'state'), XDG_CACHE_HOME: join(profile, 'cache'), OPENCODE_CONFIG: join(project, 'opencode.json'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCHAMBER_AGENT_TOOL_URL: `http://127.0.0.1:${(notifications.address() as any).port}`, OPENCHAMBER_AGENT_TOOL_TOKEN: 'notification-fixture-only' };
+  const alertHistory = await AlertHistory.open(join(profile, 'alerts.sqlite'));
+  alertHistory.setSettings({ ...alertHistory.settings(), liveGrowth: 0.5 });
+  const env = { ...process.env, XDG_CONFIG_HOME: join(profile, 'config'), XDG_DATA_HOME: join(profile, 'data'), XDG_STATE_HOME: join(profile, 'state'), XDG_CACHE_HOME: join(profile, 'cache'), OPENCODE_CONFIG: join(project, 'opencode.json'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_AUTOUPDATE: '1', CONTEXT_MONITOR_ALERTS_PATH: join(profile, 'alerts.sqlite'), OPENCHAMBER_AGENT_TOOL_URL: `http://127.0.0.1:${(notifications.address() as any).port}`, OPENCHAMBER_AGENT_TOOL_TOKEN: 'notification-fixture-only' };
   const child = spawn(process.env.CONTEXT_MONITOR_OPENCODE ?? 'opencode', ['serve', '--hostname', '127.0.0.1', '--port', String(port)], { cwd: project, env: { ...env, CONTEXT_MONITOR_FIXTURE_KEY: 'local-test-only' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', d => output += d); child.stderr.on('data', d => output += d);
@@ -169,6 +172,13 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
       assert.match(notice.payload.title + ' ' + notice.payload.body, /Context Monitor isolated smoke/);
       assert.ok(notice.payload.body.includes('project'));
       assert.ok(!notice.payload.body.includes(profile), 'Visible text must not disclose full filesystem paths');
+      for (let i = 0; i < 50 && alertHistory.list()[0]?.delivery !== 'host-accepted'; i++) await delay(100);
+      const historyEvent = alertHistory.list()[0];
+      assert.equal(historyEvent?.sessionId, sessionID, 'Native alert must reach durable global history');
+      assert.equal(historyEvent?.directory, project);
+      assert.equal(historyEvent?.threshold, 0.5);
+      assert.equal(historyEvent?.capacity, 32000);
+      assert.equal(historyEvent?.delivery, 'host-accepted');
     }
     const before = snapshot.state.revision;
     const exported = await monitor('/export', { format: 'json' });
@@ -201,5 +211,6 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
     child.stdout.destroy(); child.stderr.destroy();
     await new Promise<void>(r => provider.close(() => r()));
     await new Promise<void>(r => notifications.close(() => r()));
+    alertHistory.close();
   }
 });

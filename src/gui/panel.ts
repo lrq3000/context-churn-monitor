@@ -5,6 +5,7 @@ import { activityStyle, measurementNotice, replayRows } from '../reports/activit
 import type { Activity, BodyPage } from '../core/activity.js';
 import type { State, Config, Step, Turn } from '../core/types.js';
 import { AnalysisPanel } from './analysis.js';
+import { AlertsPanel } from './alerts.js';
 
 /** A status frame carries the exact session identity. The service-fed native status surface carries only a directory and cannot safely choose a conversation. */
 class ReportPanel {
@@ -22,6 +23,7 @@ class ReportPanel {
   private settings?: Config;
   private snapshot: State | null = null;
   private analysis: AnalysisPanel;
+  private alerts: AlertsPanel;
 
   constructor(private host: HostClient) {
     const style = document.createElement('style'); style.textContent = reportStyle + activityStyle; document.head.append(style);
@@ -31,6 +33,7 @@ class ReportPanel {
       <details id="pairing" class="report-only"><summary>Connect monitoring backend</summary><p class="pair-note muted">Enter the backend descriptor file for this project. Credentials remain in the local service.</p><label>Backend descriptor path<input id="descriptor" placeholder="Absolute path to ….backend.json"></label><div id="pair-button" class="buttons"></div></details>
       <div id="metrics" class="metrics"></div><div id="chart"></div><p id="quality" class="muted"></p>
       <div class="toolbar"><label><span><input id="warnings" type="checkbox" checked> Automatic warnings</span></label><label><span><input id="details-toggle" type="checkbox" checked> Step details</span></label><div id="view-button"></div></div>
+      <section id="global-alerts" class="report-only"></section>
       <div id="report" class="report-only">
         <div class="replay-heading"><div><h2>Activity replay</h2><p class="muted">The conversation’s activity, in the order it happened.</p></div></div>
         <div class="toolbar"><label>Scope<select id="scope"><option value="all">All recorded activities</option><option value="current">Current turn</option><option value="recent">Recent turns</option></select></label><div id="refresh"></div></div>
@@ -39,9 +42,10 @@ class ReportPanel {
         <div class="buttons"><div id="previous"></div><span id="page-label" class="muted"></span><div id="next"></div></div>
         <div class="buttons"><div id="export-html"></div><div id="export-json"></div></div>
         ${measurementNotice}
-        <details><summary>Monitor settings</summary><div class="toolbar"><label>EMA span (turns)<input id="span" type="number" min="1" value="5"></label><label>Analysis lookback (turns)<input id="lookback" type="number" min="1" value="5"></label><label>Growth threshold (pp)<input id="growth-threshold" type="number" min="0.1" step="0.1" value="40"></label><label>Compaction threshold<input id="compaction-threshold" type="number" min="0.01" step="0.01" value="0.3"></label><div id="save-settings"></div></div></details>
+        <details><summary>Monitor settings — current session</summary><div class="toolbar"><label>EMA span (turns)<input id="span" type="number" min="1" value="5"></label><label>Analysis lookback (turns)<input id="lookback" type="number" min="1" value="5"></label><div id="save-settings"></div></div></details>
         <section id="analysis" class="report-only"></section>
       </div>`;
+    this.alerts = new AlertsPanel(document.querySelector('#global-alerts')!, host, (path, method, input) => this.request(path, method, input));
     this.analysis = new AnalysisPanel(host, () => {
       const directory = this.directory, session = this.session;
       return (path, input) => this.request(path, 'POST', input, { directory, session });
@@ -61,7 +65,7 @@ class ReportPanel {
       if (current()) this.text('notice', `Saved ${result.path}`);
     });
     this.button('save-settings', 'Save settings', async current => {
-      await this.request('/settings', 'POST', { span: Number(this.input('span').value), lookback: Number(this.input('lookback').value), growthThreshold: Number(this.input('growth-threshold').value), compactionThreshold: Number(this.input('compaction-threshold').value) });
+      await this.request('/settings', 'POST', { span: Number(this.input('span').value), lookback: Number(this.input('lookback').value) });
       if (current()) this.reset();
     });
     this.input('warnings').onchange = () => void this.run(async current => { await this.request('/settings', 'POST', { warnings: this.input('warnings').checked }); if (current()) this.reset(); });
@@ -129,6 +133,8 @@ class ReportPanel {
     this.busy = true;
     const epoch = this.epoch;
     try {
+      if (!this.compact) await this.alerts.refresh();
+      if (epoch !== this.epoch) return;
       if (!this.directory || !this.session) { this.text('quality', 'Select a monitored conversation to see its metrics.'); return; }
       const result = await this.request('/snapshot');
       if (epoch !== this.epoch) return;
@@ -137,7 +143,6 @@ class ReportPanel {
       this.input('warnings').checked = result.settings.warnings;
       if (document.activeElement?.tagName !== 'INPUT') {
         this.input('span').value = String(result.settings.span); this.input('lookback').value = String(result.settings.lookback);
-        this.input('growth-threshold').value = String(result.settings.growthThreshold); this.input('compaction-threshold').value = String(result.settings.compactionThreshold);
       }
       if (!this.compact && this.revision !== (result.state?.revision ?? 0)) {
         const page = await this.request('/activities', 'GET', undefined, { limit: '50', offset: String(this.offset), scope: this.input('scope').value, kind: this.input('activity-filter').value, q: this.input('activity-search').value });

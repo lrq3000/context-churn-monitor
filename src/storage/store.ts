@@ -1,8 +1,10 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { configure, Monitor } from '../core/monitor.js';
 import type { Config, Event, State, Step, Turn } from '../core/types.js';
 import { ActivityStore } from './activities.js';
+import { openDatabase } from './database.js';
+import { alertSource, type ThresholdEvent } from './alerts.js';
+import type { AlertSettings } from '../core/alerts.js';
 
 interface Statement {
   run(...values: any[]): unknown;
@@ -11,12 +13,13 @@ interface Statement {
 }
 export interface Database { exec(sql: string): unknown; prepare(sql: string): Statement; close(): void }
 export interface StepQuery { limit?: number; offset?: number; scope?: 'all' | 'current' | 'recent'; lookback?: number; sort?: 'time' | 'growth'; maxTurn?: number }
+export interface AlertContext { directory: string; settings: () => AlertSettings }
 
 /** SQLite provides crash-safe transactions and indexed pagination across short-lived Codex processes and long-lived OpenCode plugins. */
 export class Store {
   readonly activities: ActivityStore;
   private depth = 0;
-  private constructor(readonly db: Database, private readonly config: Partial<Config>, readonly path: string, readOnly = false) {
+  private constructor(readonly db: Database, private readonly config: Partial<Config>, readonly path: string, readOnly = false, private readonly alertContext?: AlertContext) {
     if (readOnly) { db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=3000;'); this.activities = new ActivityStore(db, session => this.snapshot(session), true); return; }
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, state TEXT NOT NULL);
@@ -26,18 +29,15 @@ export class Store {
       CREATE TABLE IF NOT EXISTS steps (session TEXT NOT NULL, id TEXT NOT NULL, turn_number INTEGER NOT NULL, number INTEGER NOT NULL, growth REAL, data TEXT NOT NULL, PRIMARY KEY(session,id));
       CREATE INDEX IF NOT EXISTS steps_order ON steps(session,turn_number,number);
       CREATE INDEX IF NOT EXISTS steps_growth ON steps(session,growth DESC,turn_number,number);
-      CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS alert_outbox (id TEXT PRIMARY KEY,at INTEGER NOT NULL,acked INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS alert_outbox_order ON alert_outbox(at DESC,id DESC);`);
     this.activities = new ActivityStore(db, session => this.snapshot(session));
   }
 
-  static async open(path: string, config: Partial<Config> = {}, readOnly = false): Promise<Store> {
+  static async open(path: string, config: Partial<Config> = {}, readOnly = false, alertContext?: AlertContext): Promise<Store> {
     configure(config);
-    if (path !== ':memory:' && !readOnly) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    // OpenCode embeds Bun; the hook CLI uses Node. Both expose the same small synchronous SQLite subset, avoiding a native npm addon.
-    const moduleName = typeof (globalThis as any).Bun === 'object' ? 'bun:sqlite' : 'node:sqlite';
-    const sqlite = await import(moduleName);
-    const db = moduleName === 'bun:sqlite' ? new sqlite.Database(path, readOnly ? { readonly: true } : { create: true }) : new sqlite.DatabaseSync(path, { readOnly });
-    return new Store(db as Database, config, path, readOnly);
+    return new Store(await openDatabase(path, readOnly), config, path, readOnly, alertContext);
   }
 
   /** Deferred read transaction pins a WAL snapshot without reserving the writer. Use on a separate read-only connection, never around monitoring ingestion. */
@@ -66,12 +66,25 @@ export class Store {
       const monitor = new Monitor(this.settings(session), this.snapshot(session) ?? undefined);
       for (const event of events) {
         if (this.db.prepare('SELECT 1 FROM events WHERE session=? AND id=?').get(session, event.id)) continue;
+        // Implicit completion below can itself cross an EMA threshold; include that transition in outbox detection.
+        const beforeAlerts = new Set(monitor.state.alerts.map(alert => alert.id));
         // Save an automatically closed preceding turn before the reducer replaces its active record.
         if (event.type === 'turn' && monitor.state.turn && monitor.state.turn.id !== event.turnId) {
           monitor.accept({ type: 'complete', id: `${event.id}:previous`, at: event.at });
           this.saveRecords(session, monitor.state);
         }
         monitor.accept(event);
+        if (this.alertContext) for (const alert of monitor.state.alerts) {
+          if (beforeAlerts.has(alert.id)) continue;
+          const marker = `threshold:${alert.id}`;
+          if (this.db.prepare('SELECT 1 FROM events WHERE session=? AND id=?').get(session, marker)) continue;
+          const source = alertSource(this.path, this.alertContext.directory);
+          const id = createHash('sha256').update(source.id).update('\0').update(session).update('\0').update(alert.id).digest('hex');
+          const record: ThresholdEvent = { id, at: alert.at, sessionId: session, directory: source.directory, metric: alert.metric, value: alert.value, threshold: alert.threshold!, kind: alert.kind, model: alert.model?.slice(0, 500), capacity: alert.capacity, delivery: 'recorded' };
+          this.db.prepare('INSERT OR IGNORE INTO alert_outbox(id,at,data) VALUES(?,?,?)').run(id, record.at, JSON.stringify(record));
+          this.db.prepare('INSERT INTO events VALUES(?,?)').run(session, marker);
+          this.db.exec('DELETE FROM alert_outbox WHERE id NOT IN (SELECT id FROM alert_outbox ORDER BY at DESC,id DESC LIMIT 100)');
+        }
         this.saveRecords(session, monitor.state);
         this.db.prepare('INSERT INTO events VALUES (?,?)').run(session, event.id);
       }
@@ -92,7 +105,7 @@ export class Store {
   }
 
   sessions(): string[] { return this.db.prepare('SELECT id FROM sessions ORDER BY id').all().map(row => row.id); }
-  settings(session: string): Config { return configure({ ...this.config, ...this.get<Partial<Config>>(`settings:${session}`) }); }
+  settings(session: string): Config { return configure({ ...this.config, ...this.get<Partial<Config>>(`settings:${session}`), ...this.alertContext?.settings() }); }
   setSettings(session: string, input: Partial<Config>): Config {
     return this.atomic(() => {
       const next = configure({ ...this.settings(session), ...input });
@@ -106,6 +119,26 @@ export class Store {
     return row ? JSON.parse(row.value) : undefined;
   }
   set(key: string, value: unknown): void { this.db.prepare('INSERT OR REPLACE INTO kv VALUES (?,?)').run(key, JSON.stringify(value)); }
+
+  pendingAlerts(limit = 100): ThresholdEvent[] {
+    return this.db.prepare('SELECT data FROM alert_outbox WHERE acked=0 ORDER BY at,id LIMIT ?').all(Math.max(1, Math.min(100, Math.trunc(limit)))).map(row => JSON.parse(row.data));
+  }
+  unclaimedAlerts(): ThresholdEvent[] {
+    return this.db.prepare("SELECT a.data FROM alert_outbox a LEFT JOIN kv k ON k.key='delivery:'||a.id WHERE k.key IS NULL ORDER BY a.at,a.id LIMIT 100").all().map(row => JSON.parse(row.data)).filter(event => event.delivery === 'recorded');
+  }
+  acknowledgeAlerts(ids: string[]): void { this.atomic(() => { for (const id of ids) this.db.prepare('UPDATE alert_outbox SET acked=1 WHERE id=?').run(id); }); }
+  updateAlert(id: string, detail: Partial<Pick<ThresholdEvent, 'title' | 'delivery'>>): void {
+    this.atomic(() => {
+      const row = this.db.prepare('SELECT data FROM alert_outbox WHERE id=?').get(id);
+      if (row) this.db.prepare('UPDATE alert_outbox SET acked=0,data=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(row.data), ...detail, title: detail.title?.slice(0, 200) ?? JSON.parse(row.data).title }), id);
+    });
+  }
+  claimAlertDelivery(id: string): boolean {
+    return this.atomic(() => {
+      if (this.get(`delivery:${id}`)) return false;
+      this.set(`delivery:${id}`, 'attempted'); this.updateAlert(id, { delivery: 'attempted' }); return true;
+    });
+  }
 
   steps(session: string, query: StepQuery = {}): { items: Step[]; next: number | null } {
     const limit = Math.max(1, Math.min(200, Math.trunc(query.limit ?? 100)));

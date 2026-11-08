@@ -15,6 +15,7 @@
     "compactionThreshold": { "type": "number", "exclusiveMinimum": 0, "default": 0.3 },
     "liveGrowth": { "type": "number", "exclusiveMinimum": 0, "default": 80 },
     "liveCompactions": { "type": "number", "exclusiveMinimum": 0, "default": 2 },
+    "minContextWindow": { "type": "integer", "minimum": 0, "default": 32000 },
     "cooldownTurns": { "type": "integer", "minimum": 1, "default": 5 },
     "rearmTurns": { "type": "integer", "minimum": 1, "default": 2 },
     "rearmRatio": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "default": 0.8 },

@@ -54,7 +54,7 @@ Run `serve` in the project directory to be paired. It prints the descriptor path
 
 ### OpenChamber
 
-After building, install the complete `openchamber/` folder through Settings → Extensions using the host's local extension workflow. It contains `package.json`, `panel/index.html`, bundled `panel/app.js`, and `service.cjs`; it is independent of the backend package and needs no npm dependencies at runtime. Approve the declared local service and model capability through the host's ordinary extension controls.
+After building, install the complete `openchamber/` folder through Settings → Extensions using the host's local extension workflow. It contains `package.json`, `panel/index.html`, bundled `panel/app.js`, and `service.cjs`; it is independent of the backend package and needs no npm dependencies at runtime. Approve the declared local service and model capability through the host's ordinary extension controls. Release 0.3.0 additionally requests `sessions` for explicit **Go to the session** navigation; approval is required when upgrading, and denied/missing access is reported without inventing a deep link. This feature does not read conversation contents.
 
 The extension's `package.json` keeps `name` and `version` at the top level and nests `apiVersion`, `engines` and `contributes` inside `openchamber`. The native installer requires the package version returned by `parseManifestJson`; an unwrapped manifest can pass inner-manifest validation but still be rejected with the generic “package.json is invalid. panel.id must be kebab-case” message.
 
@@ -83,13 +83,26 @@ OpenCode request occupancy is `input + cache.read + cache.write`; output/reasoni
 | `span`, `minSamples` | 5, 3 | Completed-turn EMA uses `alpha = 2/(span+1)`; minimum samples for EMA warnings. |
 | `growthThreshold`, `compactionThreshold` | 40 pp, 0.30 | Separate completed-turn warning thresholds. |
 | `liveGrowth`, `liveCompactions` | 80 pp, 2 | Independent within-turn warning thresholds. |
-| `cooldownTurns` | 5 | Minimum completed-turn distance between warnings per metric. |
+| `minContextWindow` | 32000 tokens | Inclusive minimum originating model window for both alert types; 0 disables filtering. Unknown windows fail eligibility while enabled. |
+| `cooldownTurns` | 5 | Minimum eligible-turn distance between warnings per metric. |
 | `rearmTurns`, `rearmRatio` | 2, 0.8 | Each metric rearms after two trustworthy completed measurements below 80% of threshold. Missing/partial growth cannot prove recovery. |
 | `warnings` | true | Disables warning delivery without disabling measurements. |
 | `lookback` | 5 turns | Analysis range, independent of EMA span and history retention. |
 | `inputBudget`, `outputBudget` | 12000, 3000 | Analysis allowances, further restricted by known host/model limits. |
 
-See [`config.schema.json`](config.schema.json) for the `monitor` settings object. GUI settings are persisted per session and override plugin defaults. Span changes affect subsequent EMA updates; existing samples are not replayed. Reopening the latest completed turn replaces its EMA contribution rather than adding another sample.
+See [`config.schema.json`](config.schema.json) for the `monitor` settings object. The five numeric alert controls are user-wide and authoritative across OpenCode/Codex projects: **Notification settings — all projects** edits the two current-turn thresholds, the two eligible-turn EMA thresholds and the minimum model window. Initial shared defaults apply until saved; old per-session alpha alert numbers do not override them. Session-specific warning disable, EMA span, analysis lookback and other monitor/analysis settings remain separate. Span changes affect subsequent updates; existing samples are not replayed. Reopening the latest completed turn replaces its EMA contribution rather than adding another sample.
+
+No new metric or occupancy alert is added. Growth/compaction collection and the ordinary displayed EMAs include all monitored models; only alert evaluation uses eligible-turn EMAs and cooldown/rearm progress. A turn using any below-minimum or unknown-capacity primary model becomes ineligible for subsequent alerts and alert averages, even if a later model has a larger window. A legitimate earlier live alert remains recorded. Changing the minimum resets only alert-specific averages/recovery prospectively, not ordinary accounting or history. Filtering disabled with 0 also permits unknown windows; unavailable growth still remains unavailable.
+
+## Global notification history and recovery
+
+**Notification history — all projects** lists the newest 100 eligible threshold events across projects, with timestamp, thread/project, existing metric, value and originating threshold. Model/window and event details expand separately. Select a row and click **Go to the session** to open its originating thread, including another project; selecting alone does not navigate. Eviction clears selection. Global controls/history work without a selected project/session or backend pairing, while ordinary replay still requires pairing.
+
+Shared settings, history and registered recovery sources live at `~/.local/share/context-churn-monitor/alerts.sqlite`, independent of backend `dataDir` and project replay databases. `CONTEXT_MONITOR_ALERTS_PATH` overrides that shared file for isolated tests or profiles. SQLite transactionally retains at most 100 global history rows; each source retains at most 100 recovery-event payloads with bounded titles/models. Existing activity replay retention is not changed by this cap.
+
+Each new threshold event is committed in a local outbox in the same transaction as monitoring state, transferred idempotently into global history, then acknowledged. Restart/history refresh reconciles registered backend stores, including inactive projects; unavailable/locked sources produce a recovery limitation. No old alpha warning import or offline threshold reconstruction occurs. Events outside the newest retained 100 cannot be recovered by this feature.
+
+History records crossings even if desktop notification delivery is unavailable. **Recorded**, **Delivery attempted**, **Host accepted**, **Delivery unconfirmed**, and **Notification unavailable** describe only available evidence: host acceptance never proves OS display or reading. Delivery is durably claimed before a single send attempt; a lost result is not retried. History recovery never invokes the sender or retries an uncertain notification. A retained never-attempted event may be sent on later runtime activity, but an already evicted event is not sent. No transcripts or credentials are copied into history; thread/project labels can still be sensitive.
 
 ## Reports, storage and analysis
 
@@ -127,13 +140,13 @@ Contracts consulted in November 2026: [OpenCode V2 plugins](https://opencode.ai/
 
 ## Source version and date records
 
-The backend package, portable manifest and independently installable UI share release version `0.2.1`; package-lock mirrors agree. Their records use last update `2026-11-08`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. The untouched settings schema, TypeScript configuration and hooks retain artifact revision `1.0.0` and update date `2026-11-06`; these are artifact revisions, not host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
+The backend package, portable manifest and independently installable UI share release version `0.3.0`; package-lock mirrors agree. Their records use last update `2026-11-08`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. Configuration-only files inherit the plugin release: the settings schema adds `minContextWindow` in 0.3.0 without an independent version increment. Existing custom records in the schema, TypeScript configuration and hooks remain `1.0.0` / `2026-11-06` as historical artifact records, not current release or host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
 
 The [portable manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) rejects a root `metadata` property; arbitrary root metadata in the hook file is not an established host contract. The user-approved records for those two files therefore live here, outside their runtime configuration. The hook record was added on the recorded update date; hook commands themselves were not changed by this revision.
 
 ```json
 {
-  "plugin.json": { "metadata": { "version": "0.2.1", "creation": "2026-11-03", "last_updated": "2026-11-08" } },
+  "plugin.json": { "metadata": { "version": "0.3.0", "creation": "2026-11-03", "last_updated": "2026-11-08" } },
   "hooks/hooks.json": { "metadata": { "version": "1.0.0", "creation": "2026-11-03", "last_updated": "2026-11-06" } }
 }
 ```

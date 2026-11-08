@@ -11,10 +11,18 @@ import { body, respond } from '../../src/reports/http.js';
 import { OPENCHAMBER_SDK_CHANNEL, OPENCHAMBER_SDK_API_VERSION } from '@openchamber/sdk';
 import { parseGuestMessage } from '@openchamber/sdk/schemas';
 import { assertRenderedBody } from '../review/body-check.mjs';
+import { AlertHistory } from '../../src/storage/alerts.js';
+import { GlobalAlertService } from '../../src/gui/alert-service.js';
 
 /** This fixture replaces only the external OpenChamber host; the SDK, browser DOM, backend and SQLite are real. */
 test('replay filters, expands, preserves state and exports without invoking a model', { timeout: 60000 }, async t => {
   const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'ui-'));
+  const history = await AlertHistory.open(join(root, 'alerts.sqlite'));
+  const globals = new GlobalAlertService(history);
+  history.insert([
+    { id: 'global-one', at: Date.now() - 2000, directory: '/project-one', sessionId: 'session-one', title: '<script>window.injected=true</script>', metric: 'growth', value: 85, threshold: 80, kind: 'live', model: 'fixture/large', capacity: 128000, delivery: 'unconfirmed' },
+    { id: 'global-other', at: Date.now() - 1000, directory: '/another-project', sessionId: 'session-other', title: 'Thread from another project', metric: 'compactions', value: 2, threshold: 2, kind: 'live', model: 'fixture/large', capacity: 64000, delivery: 'host-accepted' },
+  ]);
   const store = await Store.open(join(root, 'state.sqlite'));
   const backend = await Backend.start(store, { directory: '/project', descriptorPath: join(root, 'backend.json') });
   store.ingest('s', [{ type: 'observe', id: 'initial', at: 0, tokens: 0, capacity: 1000, model: 'test', method: 'test', quality: 'reported' }]);
@@ -34,7 +42,7 @@ test('replay filters, expands, preserves state and exports without invoking a mo
     if (req.url === '/') {
       res.setHeader('Content-Type', 'text/html');
       res.end(`<html><head><title>Context Monitor QA</title></head><body style="margin:0"><iframe title="Report" src="/panel" style="border:0;width:100%;height:900px"></iframe><script>
-      window.calls=[];addEventListener('message',async e=>{
+      window.calls=[];window.opens=[];addEventListener('message',async e=>{
         const m=e.data;if(!m.channel)return;
         const answer=(type,payload)=>e.source.postMessage({channel:m.channel,v:m.v,type,id:m.id,ok:true,payload},'*');
         if(m.type==='hello'){
@@ -44,6 +52,11 @@ test('replay filters, expands, preserves state and exports without invoking a mo
         if(m.type==='service-request'){
           const r=await fetch('/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)});
           answer('result',{status:r.status,body:await r.text()});
+        }else if(m.type==='open-session'){
+          window.opens.push(m.payload.sessionId);
+          if(window.deferOpen){window.rejectOpen=()=>e.source.postMessage({channel:m.channel,v:m.v,type:'result',id:m.id,ok:false,code:'NOT_FOUND',error:'Session was deleted'},'*');return;}
+          if(window.failOpen)e.source.postMessage({channel:m.channel,v:m.v,type:'result',id:m.id,ok:false,code:'NOT_GRANTED',error:'Session access permission is unavailable'},'*');
+          else answer('result',{});
         }else if(m.type==='generate'){
           e.source.postMessage({channel:m.channel,v:m.v,type:'result',id:m.id,ok:false,code:'MODEL_FAILED',error:'Fixture provider disconnected'},'*');
         }else answer('result',{});
@@ -55,6 +68,10 @@ test('replay filters, expands, preserves state and exports without invoking a mo
       const message = parseGuestMessage(await body(req));
       if (message?.type !== 'service-request') return respond(res, 400, { error: 'Invalid SDK service request' });
       const input = message.payload; requests.push(input.path);
+      try {
+        const result = await globals.handle(new URL(input.path, 'http://fixture.invalid'), input.method, input.body ? JSON.parse(input.body) : undefined);
+        if (result !== undefined) return respond(res, 200, result);
+      } catch (error) { return respond(res, 400, { error: String(error) }); }
       const url = new URL(input.path, backend.descriptor.url);
       for (const [k, v] of Object.entries(input.query ?? {})) if (k !== 'directory') url.searchParams.set(k, String(v));
       const r = await fetch(url, { method: input.method, headers: { Authorization: `Bearer ${backend.descriptor.token}`, 'X-Context-Monitor-Instance': backend.descriptor.instance }, body: input.body });
@@ -213,5 +230,96 @@ test('replay filters, expands, preserves state and exports without invoking a mo
         await assert.rejects(assertRenderedBody(row, { status: 500, body: JSON.stringify({ error: 'Body unavailable' }) }), /body|retriev/i);
       } finally { await page.unroute('**/proxy', handler); }
     });
-  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); await backend.close(); store.close(); }
+    await t.test('global controls and cross-project history remain usable without a session or pairing', async () => {
+      await page.reload(); await frame.getByRole('heading', { name: 'Notification history — all projects', exact: true }).waitFor();
+      await frame.locator('#alert-settings > summary').click();
+      assert.equal(await frame.getByLabel('Minimum model context window (tokens)').inputValue(), '32000');
+      await frame.getByLabel('Current-turn growth threshold (pp)').fill('95');
+      await frame.getByLabel('Minimum model context window (tokens)').fill('64000');
+      await frame.getByRole('button', { name: 'Save global alert settings', exact: true }).click();
+      await frame.locator('#alerts-feedback').filter({ hasText: 'Saved' }).waitFor();
+      assert.equal(history.settings().liveGrowth, 95); assert.equal(history.settings().minContextWindow, 64000);
+      await page.evaluate(({ channel, v }) => { const target = document.querySelector('iframe')!.contentWindow!; target.postMessage({ channel, v, type: 'session', payload: { session: null } }, '*'); target.postMessage({ channel, v, type: 'directory', payload: { directory: null } }, '*'); }, { channel: OPENCHAMBER_SDK_CHANNEL, v: OPENCHAMBER_SDK_API_VERSION });
+      await frame.locator('#quality').filter({ hasText: 'Select a monitored conversation' }).waitFor();
+      await frame.getByRole('button', { name: 'Refresh notifications', exact: true }).click();
+      await frame.locator('[data-alert="global-other"]').waitFor();
+      assert.equal(await frame.locator('[data-alert]').count(), 2);
+      assert.ok((await frame.locator('[data-alert="global-one"]').textContent())?.includes('<script>window.injected=true</script>'));
+      assert.equal(await frame.locator('#global-alerts script').count(), 0);
+      assert.equal(await frame.getByRole('button', { name: 'Go to the session', exact: true }).isDisabled(), true);
+    });
+    await t.test('selecting a global row does not navigate until Go to the session and errors stay visible', async () => {
+      await frame.getByLabel('Select Thread from another project', { exact: true }).check();
+      assert.deepEqual(await page.evaluate(() => (window as any).opens), []);
+      await frame.getByRole('button', { name: 'Refresh notifications', exact: true }).click();
+      assert.equal(await frame.getByRole('button', { name: 'Go to the session', exact: true }).isEnabled(), true);
+      await page.evaluate(() => (window as any).failOpen = true);
+      await frame.getByRole('button', { name: 'Go to the session', exact: true }).click();
+      await frame.locator('#alerts-error').filter({ hasText: 'permission' }).waitFor();
+      await frame.getByRole('button', { name: 'Refresh notifications', exact: true }).click();
+      assert.match(await frame.locator('#alerts-error').innerText(), /permission/);
+      await page.evaluate(() => (window as any).failOpen = false);
+      await frame.getByRole('button', { name: 'Go to the session', exact: true }).click();
+      await page.waitForFunction(() => (window as any).opens.length === 2);
+      assert.deepEqual(await page.evaluate(() => (window as any).opens), ['session-other', 'session-other']);
+    });
+    await t.test('a missing-session error survives eviction while navigation is pending', async () => {
+      await page.evaluate(() => (window as any).deferOpen = true);
+      await frame.getByRole('button', { name: 'Go to the session', exact: true }).click();
+      await page.waitForFunction(() => typeof (window as any).rejectOpen === 'function');
+      history.insert(Array.from({ length: 100 }, (_, i) => ({ id: `eviction-race-${i}`, at: Date.now() + i, directory: '/new-project', sessionId: `race-session-${i}`, metric: 'growth' as const, value: 90, threshold: 80, kind: 'live' as const, delivery: 'recorded' as const })));
+      await frame.getByRole('button', { name: 'Refresh notifications', exact: true }).click();
+      await frame.locator('[data-alert="eviction-race-99"]').waitFor();
+      assert.equal(await frame.getByRole('button', { name: 'Go to the session', exact: true }).isDisabled(), true);
+      await page.evaluate(() => { (window as any).rejectOpen(); (window as any).deferOpen = false; });
+      await frame.locator('#alerts-error').filter({ hasText: 'Session was deleted' }).waitFor();
+      assert.match(await frame.locator('#alerts-error').innerText(), /session-other/);
+    });
+    await t.test('evicting the selected notification clears navigation and keeps exactly 100 bounded rows', async () => {
+      history.insert(Array.from({ length: 100 }, (_, i) => ({ id: `new-global-${i}`, at: Date.now() + i, directory: '/new-project', sessionId: `new-session-${i}`, title: `Recent thread ${i}`, metric: 'growth' as const, value: 90, threshold: 80, kind: 'live' as const, capacity: 128000, delivery: 'recorded' as const })));
+      await frame.getByRole('button', { name: 'Refresh notifications', exact: true }).click();
+      await frame.locator('[data-alert="new-global-99"]').waitFor();
+      assert.equal(await frame.locator('[data-alert]').count(), 100);
+      assert.equal(await frame.getByRole('button', { name: 'Go to the session', exact: true }).isDisabled(), true);
+      await page.setViewportSize({ width: 720, height: 1100 });
+      await page.evaluate(() => { const iframe = document.querySelector('iframe')!; iframe.style.height = `${iframe.contentDocument!.body.scrollHeight + 30}px`; });
+      await page.screenshot({ path: join(root, 'alerts-desktop.png'), fullPage: true });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => { const iframe = document.querySelector('iframe')!; iframe.style.height = `${iframe.contentDocument!.body.scrollHeight + 30}px`; });
+      await page.screenshot({ path: join(root, 'alerts-mobile.png'), fullPage: true });
+      assert.equal(await frame.locator('body').evaluate(element => element.scrollWidth <= window.innerWidth), true);
+      assert.deepEqual(errors, []);
+    });
+    await t.test('global settings stay disabled until their first successful load', async () => {
+      let release!: () => void;
+      let handled!: () => void;
+      const gate = new Promise<void>(resolve => release = resolve);
+      const settled = new Promise<void>(resolve => handled = resolve);
+      const handler = async (route: any) => {
+        const request = route.request().postDataJSON().payload;
+        if (request?.path === '/notification-settings' && request.method === 'GET') {
+          try {
+            await gate;
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(history.settings()) });
+          } finally { handled(); }
+          return;
+        }
+        return route.continue();
+      };
+      await page.route('**/proxy', handler);
+      try {
+        await page.reload();
+        await frame.getByRole('heading', { name: 'Notification history — all projects', exact: true }).waitFor();
+        await frame.locator('#alert-settings > summary').click();
+        assert.equal(await frame.getByLabel('Minimum model context window (tokens)').isDisabled(), true, 'A pending initial read must not accept an edit that its response would overwrite');
+        assert.equal(await frame.getByRole('button', { name: 'Save global alert settings', exact: true }).isDisabled(), true);
+        release();
+        await frame.locator('[data-alert-setting="minContextWindow"]:not([disabled])').waitFor();
+        assert.equal(await frame.getByLabel('Minimum model context window (tokens)').inputValue(), '64000');
+      } finally {
+        // Settle the deferred handler before removing it, including on an assertion failure.
+        release(); await settled; await page.unroute('**/proxy', handler);
+      }
+    });
+  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); await backend.close(); store.close(); history.close(); }
 });

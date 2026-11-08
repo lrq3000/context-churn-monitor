@@ -28,7 +28,7 @@ export class CodexAdapter {
             emit({ type: 'turn', turnId: this.store.get(`pending:${session}`) ?? `unattributed:${identity}` });
             if (!turnId) emit({ type: 'gap', reason: 'Codex did not supply a stable user turn ID.' });
           }
-          emit({ type: 'step', stepId: identity, model: input.model });
+          emit({ type: 'step', stepId: identity, model: input.model, capacity: this.options.modelWindows?.[input.model] });
           break;
         case 'PostModelRequest': {
           const model = typeof input.model === 'string' ? input.model : '';

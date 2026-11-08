@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { Monitor, defaults } from '../src/core/monitor.js';
 import { stepRow } from '../src/reports/view.js';
 
-/** Independent fixtures use a 1000-token window, so ten tokens are exactly one percentage point. */
+/** Independent metric fixtures disable the window filter and use a 1000-token window, so ten tokens are exactly one percentage point. Eligibility has separate production-default tests. */
 function fixture(config = {}) {
-  const m = new Monitor(config);
+  const m = new Monitor({ minContextWindow: 0, ...config });
   let n = 0;
   const send = (event: any) => m.accept({ id: String(++n), at: n, ...event });
   const obs = (tokens: number, extra = {}) => send({ type: 'observe', tokens, capacity: 1000, model: 'a', method: 'reported-input', quality: 'reported', ...extra });

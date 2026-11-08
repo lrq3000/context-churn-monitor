@@ -65,7 +65,7 @@ export class OpenCodeAdapter {
             emit({ type: 'turn', turnId: `unattributed:${d.assistantMessageID}` });
             emit({ type: 'gap', reason: 'Monitoring began mid-turn; the user boundary is unattributed.' });
           }
-          emit({ type: 'step', stepId: d.assistantMessageID, model: `${d.model.providerID}/${d.model.id}` });
+          emit({ type: 'step', stepId: d.assistantMessageID, model: `${d.model.providerID}/${d.model.id}`, capacity });
           this.store.set(`model:${session}`, { ref: d.model, capacity: capacity ?? null });
           this.store.set(`request:${session}:${d.assistantMessageID}`, { ref: d.model, capacity: capacity ?? null });
           this.store.set(`active-request:${session}`, d.assistantMessageID);
@@ -97,7 +97,7 @@ export class OpenCodeAdapter {
             break;
           }
           for (const [index, attempt] of attempts.entries()) {
-            if (index) emit({ type: 'step', stepId: `${d.assistantMessageID}:attempt:${index + 1}`, model: `${model?.ref.providerID}/${model?.ref.id}` });
+            if (index) emit({ type: 'step', stepId: `${d.assistantMessageID}:attempt:${index + 1}`, model: `${model?.ref.providerID}/${model?.ref.id}`, capacity: model?.capacity });
             emit({ type: 'attempt', attempt: { ...attempt, outcome: index === attempts.length - 1 && event.type === 'session.step.ended' ? 'succeeded' : 'failed' } });
             if (index < attempts.length - 1) emit({ type: 'gap', reason: 'Physical request failed or fell back before the final response; occupancy unavailable for this attempt.' });
           }

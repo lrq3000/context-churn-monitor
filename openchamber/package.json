@@ -1,8 +1,8 @@
 {
   "name": "context-churn-monitor-ui",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "metadata": {
-    "version": "0.2.1",
+    "version": "0.3.0",
     "creation": "2026-11-03",
     "last_updated": "2026-11-08"
   },
@@ -13,7 +13,7 @@
       "panel": { "id": "context-churn-monitor", "name": "Context Churn Monitor", "icon": "ri-pulse-line", "entry": "panel/index.html" },
       "statusSection": { "entry": "panel/index.html", "title": "Context Churn Monitor", "height": 240, "defaultExpanded": true, "requiresProject": true },
       "attach": "dialog",
-      "capabilities": ["model"],
+      "capabilities": ["model", "sessions"],
       "service": { "entry": "service.cjs", "runtime": "host", "permissions": {} }
     }
   }
