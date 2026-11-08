@@ -8,6 +8,7 @@ import { OpenCodeAdapter } from './adapter.js';
 import type { Config } from '../../core/types.js';
 import { Analysis } from '../../analysis/analysis.js';
 import { OpenCodeGeneration } from '../../analysis/opencode.js';
+import { OpenChamberNotifications } from './notifications.js';
 
 /** A location-scoped plugin uses durable event IDs for deduplication and keeps reports outside session messages. */
 export default Plugin.define({
@@ -19,6 +20,7 @@ export default Plugin.define({
     const key = createHash('sha256').update(directory).digest('hex').slice(0, 20);
     const store = await Store.open(join(root, 'replay-v2', `${key}.sqlite`), options.monitor);
     const adapter = new OpenCodeAdapter(store);
+    const notifications = new OpenChamberNotifications(directory, async (sessionID, signal) => (await ctx.session.get({ sessionID }, { signal })).title);
     const generation = new OpenCodeGeneration(ctx, store, options.analysisModel);
     await generation.setup();
     const analysis = new Analysis(store, { resolve: (mode, session) => generation.resolve(mode, session), generate: job => generation.generate(job) });
@@ -62,7 +64,7 @@ export default Plugin.define({
               // Persist before sending: an uncertain network outcome must not flood the user with repeat warnings.
               store.set(delivered, 'attempted');
               console.warn(`[context-monitor] ${alert.metric} ${alert.value.toFixed(2)} (${alert.kind}); session ${event.data.sessionID}`);
-              await notify(`${alert.metric} threshold reached: ${alert.value.toFixed(2)} (${alert.kind}). Open Context Churn Monitor to inspect steps.`);
+              await notifications.send(event.data.sessionID, `${alert.metric} threshold reached: ${alert.value.toFixed(2)} (${alert.kind}). Open Context Churn Monitor to inspect steps.`);
             }
           } catch (error) { console.error('[context-monitor] Event processing failed', error); }
         }
@@ -71,12 +73,3 @@ export default Plugin.define({
     return async () => { controller.abort(); await Promise.all([hook.dispose(), requestHook.dispose(), responseHook.dispose(), socketHook.dispose()]); await task; await backend.close(); await generation.dispose(); store.close(); };
   },
 });
-
-/** Managed OpenChamber supplies this authenticated callback. No callback means console + persisted alerts, not a guessed port. */
-async function notify(message: string): Promise<void> {
-  const callback = process.env.OPENCHAMBER_AGENT_TOOL_URL, token = process.env.OPENCHAMBER_AGENT_TOOL_TOKEN;
-  if (!callback || !token) return;
-  try {
-    await fetch(new URL('/api/notifications/emit', callback), { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Context Churn Monitor', body: message }), signal: AbortSignal.timeout(3000) });
-  } catch { /* The persistent alert remains visible even when notification delivery is unavailable. */ }
-}

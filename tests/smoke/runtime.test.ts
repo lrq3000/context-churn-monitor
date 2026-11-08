@@ -28,6 +28,13 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
   let failAnalysis = false;
   let omitUsage = false;
   let failPrimaryOnce = runtime === 'openai-compatible';
+  let inputTokens = 300;
+  const notices: { path: string; authorization?: string; payload: any }[] = [];
+  const notifications = httpServer(async (req, res) => {
+    notices.push({ path: req.url!, authorization: req.headers.authorization, payload: await body(req) });
+    respond(res, 200, { delivered: true });
+  });
+  await new Promise<void>(r => notifications.listen(0, '127.0.0.1', r));
   const provider = httpServer(async (req, res) => {
     const input = await body(req, 1000000); providerRequests.push(input);
     if (input.stream && failPrimaryOnce) { failPrimaryOnce = false; return respond(res, 503, { error: { message: 'Retry this primary request' } }); }
@@ -50,13 +57,13 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
     const chunk = { id: 'test', object: 'chat.completion.chunk', created: 1, model: 'test', choices: [{ index: 0, delta: { role: 'assistant', content: 'Local diagnosis' }, finish_reason: null }] };
     if (input.stream) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      res.end(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], ...(omitUsage ? {} : { usage: { prompt_tokens: 300, completion_tokens: 3, total_tokens: 303 } }) })}\n\ndata: [DONE]\n\n`);
+      res.end(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], ...(omitUsage ? {} : { usage: { prompt_tokens: inputTokens, completion_tokens: 3, total_tokens: inputTokens + 3 } }) })}\n\ndata: [DONE]\n\n`);
     } else respond(res, 200, { id: 'test', object: 'chat.completion', created: 1, model: 'test', choices: [{ index: 0, message: { role: 'assistant', content: 'Local diagnosis' }, finish_reason: 'stop' }], usage: { prompt_tokens: 300, completion_tokens: 3, total_tokens: 303 } });
   });
   await new Promise<void>(r => provider.listen(0, '127.0.0.1', r));
   const config = {
     model: 'fixture/test',
-    plugins: [{ package: resolve('.'), options: { dataDir: join(profile, 'monitor'), analysisModel: 'fixture/test', monitor: { outputBudget: 37 } } }],
+    plugins: [{ package: resolve('.'), options: { dataDir: join(profile, 'monitor'), analysisModel: 'fixture/test', monitor: { outputBudget: 37, liveGrowth: 0.5 } } }],
     mcp: { servers: {} },
     providers: { fixture: {
       env: ['CONTEXT_MONITOR_FIXTURE_KEY'], package: `@opencode/ai/providers/${runtime}`,
@@ -69,7 +76,7 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
   await new Promise<void>(r => listener.listen(0, '127.0.0.1', r));
   const port = (listener.address() as { port: number }).port;
   await new Promise<void>(r => listener.close(() => r()));
-  const env = { ...process.env, XDG_CONFIG_HOME: join(profile, 'config'), XDG_DATA_HOME: join(profile, 'data'), XDG_STATE_HOME: join(profile, 'state'), XDG_CACHE_HOME: join(profile, 'cache'), OPENCODE_CONFIG: join(project, 'opencode.json'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCHAMBER_AGENT_TOOL_URL: '', OPENCHAMBER_AGENT_TOOL_TOKEN: '' };
+  const env = { ...process.env, XDG_CONFIG_HOME: join(profile, 'config'), XDG_DATA_HOME: join(profile, 'data'), XDG_STATE_HOME: join(profile, 'state'), XDG_CACHE_HOME: join(profile, 'cache'), OPENCODE_CONFIG: join(project, 'opencode.json'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCHAMBER_AGENT_TOOL_URL: `http://127.0.0.1:${(notifications.address() as any).port}`, OPENCHAMBER_AGENT_TOOL_TOKEN: 'notification-fixture-only' };
   const child = spawn(process.env.CONTEXT_MONITOR_OPENCODE ?? 'opencode', ['serve', '--hostname', '127.0.0.1', '--port', String(port)], { cwd: project, env: { ...env, CONTEXT_MONITOR_FIXTURE_KEY: 'local-test-only' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', d => output += d); child.stderr.on('data', d => output += d);
@@ -148,6 +155,20 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
         assert.equal(snapshot.state.baseline.quality, missing ? 'estimated' : 'reported');
         assert.equal(snapshot.state.turn.growth, null, 'Estimator changes must rebase rather than invent growth');
       }
+      inputTokens = 600;
+      const turn = snapshot.state.turn.number + 1;
+      const next = await fetch(`http://127.0.0.1:${port}/api/session/${sessionID}/prompt`, { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Trigger a local threshold check.' }) });
+      assert.equal(next.status, 200);
+      for (let i = 0; i < 100; i++) { snapshot = await monitor('/snapshot'); if (snapshot.state.turn.number === turn && snapshot.state.turn.ended && notices.length) break; await delay(100); }
+      assert.equal(notices.length, 1, 'One threshold must not emit repeatedly on subsequent lifecycle events');
+      const notice = notices[0];
+      assert.equal(notice.path, '/api/notifications/emit');
+      assert.equal(notice.authorization, 'Bearer notification-fixture-only');
+      assert.equal(notice.payload.sessionId, sessionID, 'Native alert must route to its originating thread');
+      assert.equal(notice.payload.directory, project);
+      assert.match(notice.payload.title + ' ' + notice.payload.body, /Context Monitor isolated smoke/);
+      assert.ok(notice.payload.body.includes('project'));
+      assert.ok(!notice.payload.body.includes(profile), 'Visible text must not disclose full filesystem paths');
     }
     const before = snapshot.state.revision;
     const exported = await monitor('/export', { format: 'json' });
@@ -179,5 +200,6 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
     else child.kill();
     child.stdout.destroy(); child.stderr.destroy();
     await new Promise<void>(r => provider.close(() => r()));
+    await new Promise<void>(r => notifications.close(() => r()));
   }
 });

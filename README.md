@@ -93,6 +93,8 @@ See [`config.schema.json`](config.schema.json) for the `monitor` settings object
 
 ## Reports, storage and analysis
 
+OpenChamber threshold notifications identify the thread title and project/worktree folder name. Release 0.2.1 supplies the originating `sessionId` and `directory` to the existing host notification API so a click can open that thread. Title lookup is bounded to one second and falls back to the session ID when unavailable; visible text is bounded to the host's limits and does not add message contents or full filesystem paths. Thread/project names may be visible on the lock screen. Existing host notification preferences, threshold/rearm rules and at-most-once delivery attempts remain unchanged. Earlier generic notifications cannot be repaired retroactively; use a newly emitted alert to verify navigation.
+
 The panel offers a chronological activity rail grouped by turn/request, all/current/recent scopes, summary search, type filters, Expand all and 50-row pages. Thinking, responses, commands, reads, patches, skill loads, compactions, retries and exposed conversation updates use readable titles. Host titles take precedence where available; other titles use deterministic excerpts. Failed/interrupted activity is explicit; IDs and successful transport details are expanded technical information. One shared notice explains request-boundary growth without assigning tool-by-tool token costs. Expanded completed rows survive polling, and text loads only when expanded, with Load more for larger bodies.
 
 SQLite stores indexed activity metadata separately from complete host-exposed input/output/error text and metadata channels. Stream fragments append as Unicode-paged chunks; canonical terminal text replaces them. First-observed order and originating request association are stable, including late tool results. Incomplete activities remain marked after interruption or monitor restart. Capture includes only events/text exposed by the host while monitoring is active; it does not reveal hidden reasoning, fetch binary attachments or recover offline events. Host-truncated direct shell output remains explicitly incomplete. Child-session activity stays separate while parent delegation/results are visible as tool activity. There is no automatic pruning, so captured text and exports can contain private content and grow on disk. Polling uses lightweight metadata rather than full transcripts. Native warnings persist in snapshots and log to the host; optional notifications remain best-effort.
@@ -125,13 +127,13 @@ Contracts consulted in November 2026: [OpenCode V2 plugins](https://opencode.ai/
 
 ## Source version and date records
 
-The backend package, portable manifest and independently installable UI share release version `0.2.0`; package-lock mirrors agree. The diagnostic skill is `1.1.0`. Changed records use last update `2026-11-07`; all creation dates remain `2026-11-03`. The untouched settings schema, TypeScript configuration and hooks retain artifact revision `1.0.0` and update date `2026-11-06`; these are artifact revisions, not host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
+The backend package, portable manifest and independently installable UI share release version `0.2.1`; package-lock mirrors agree. Their records use last update `2026-11-08`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. The untouched settings schema, TypeScript configuration and hooks retain artifact revision `1.0.0` and update date `2026-11-06`; these are artifact revisions, not host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
 
 The [portable manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) rejects a root `metadata` property; arbitrary root metadata in the hook file is not an established host contract. The user-approved records for those two files therefore live here, outside their runtime configuration. The hook record was added on the recorded update date; hook commands themselves were not changed by this revision.
 
 ```json
 {
-  "plugin.json": { "metadata": { "version": "0.2.0", "creation": "2026-11-03", "last_updated": "2026-11-07" } },
+  "plugin.json": { "metadata": { "version": "0.2.1", "creation": "2026-11-03", "last_updated": "2026-11-08" } },
   "hooks/hooks.json": { "metadata": { "version": "1.0.0", "creation": "2026-11-03", "last_updated": "2026-11-06" } }
 }
 ```
