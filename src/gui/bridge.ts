@@ -1,13 +1,15 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, openSync, readSync, closeSync, fstatSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import type { Descriptor } from '../reports/backend.js';
+import { BackendRegistry, projectKey } from '../storage/backend-registry.js';
+import { DescriptorFiles } from '../reports/descriptor.js';
 
 type Pairing = Descriptor & { descriptorPath?: string };
 
 /** Credentials stay in the approved local service, never in the iframe, extension storage, or monitored conversation. */
 export class Bridge {
   private pairs: Record<string, Pairing> = Object.create(null);
-  constructor(private path: string) {
+  constructor(private path: string, private registry?: Pick<BackendRegistry, 'paths'>) {
     const saved: Record<string, Pairing> = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
     for (const [directory, pairing] of Object.entries(saved)) {
       const key = this.projectKey(directory);
@@ -25,35 +27,22 @@ export class Bridge {
   }
 
   private projectKey(directory: string): string {
-    const path = resolve(directory);
-    return process.platform === 'win32' ? path.toLowerCase() : path;
+    return projectKey(directory);
   }
 
   private readDescriptor(directory: string, path: string): Descriptor {
     if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('Choose an absolute backend descriptor path');
     let value: unknown;
     try {
-      const fd = openSync(path, 'r');
-      try {
-        if (!fstatSync(fd).isFile()) throw new Error('Not a file');
-        // Bound the actual read, not just an earlier stat: the backend can replace this file during restart.
-        const buffer = Buffer.alloc(16385);
-        let size = 0, count: number;
-        while (size < buffer.length && (count = readSync(fd, buffer, size, buffer.length - size, null)) > 0) size += count;
-        if (size > 16384) throw new Error('Too large');
-        value = JSON.parse(buffer.subarray(0, size).toString('utf8'));
-      } finally { closeSync(fd); }
+      const bytes = DescriptorFiles.bytes(path);
+      if (!bytes) throw new Error('Descriptor is unavailable');
+      value = JSON.parse(bytes.toString('utf8'));
     } catch { throw new Error('Backend descriptor is unavailable, malformed or exceeds 16 KiB. Start the backend and check the selected descriptor path.'); }
     return this.validate(value, directory);
   }
 
   private validate(value: unknown, directory: string): Descriptor {
-    const d = value as Descriptor | null;
-    if (!d || d.version !== 1 || typeof d.url !== 'string' || typeof d.token !== 'string' || d.token.length < 32 || typeof d.instance !== 'string' || !d.instance || typeof d.directory !== 'string' || !isAbsolute(d.directory)) throw new Error('Invalid backend descriptor');
-    const url = new URL(d.url);
-    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.search || url.hash || url.username || url.password) throw new Error('Backend must be an explicit loopback origin');
-    if (this.projectKey(directory) !== this.projectKey(d.directory)) throw new Error('Backend directory does not match this project');
-    return { version: 1, url: url.origin, token: d.token, instance: d.instance, directory: d.directory };
+    return DescriptorFiles.validate(value, directory);
   }
 
   private async verify(d: Descriptor, directory: string): Promise<void> {
@@ -63,7 +52,10 @@ export class Bridge {
 
   async request(directory: string, path: string, method: string, data?: unknown): Promise<any> {
     const pairing = this.pairs[this.projectKey(directory)];
-    if (!pairing) throw new Error('Pair this project with its backend descriptor first');
+    if (!pairing) {
+      if (!this.registry) throw new Error('Pair this project with its backend descriptor first');
+      return this.call(await this.discover(directory), path, method, data);
+    }
     let descriptor: Descriptor;
     try {
       // Reread only the approved path. Never fall back to stale credentials or scan other listeners.
@@ -74,6 +66,20 @@ export class Bridge {
       throw new Error(pairing.descriptorPath !== undefined ? detail : `${detail} Legacy pairing: pair this project again with its current backend descriptor.`, { cause: error });
     }
     return this.call(descriptor, path, method, data);
+  }
+
+  private async discover(directory: string): Promise<Descriptor> {
+    const paths = this.registry!.paths(directory);
+    if (paths.length > BackendRegistry.candidateLimit) throw new Error('Too many registered backends for this project. Select a manual backend descriptor.');
+    // Bound both lookup and concurrent validation. Never search ports, project trees or another project's credentials.
+    const candidates = await Promise.all(paths.map(async path => {
+      try { const descriptor = this.readDescriptor(directory, path); await this.verify(descriptor, directory); return descriptor; }
+      catch { return undefined; }
+    }));
+    const healthy = candidates.filter((descriptor): descriptor is Descriptor => descriptor !== undefined);
+    if (healthy.length > 1) throw new Error('Multiple healthy backends are registered for this project. Select a manual backend descriptor.');
+    if (!healthy.length) throw new Error('No healthy registered backend is available for this project. Start or reload its Context Churn Monitor backend, or select a manual descriptor.');
+    return healthy[0];
   }
 
   private async call(d: Descriptor, path: string, method: string, data?: unknown, timeout = 18000): Promise<any> {

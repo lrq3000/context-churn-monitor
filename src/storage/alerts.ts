@@ -5,6 +5,7 @@ import { configure, defaults } from '../core/monitor.js';
 import type { AlertSettings } from '../core/alerts.js';
 import type { Database } from './store.js';
 import { openDatabase } from './database.js';
+import { BackendRegistry } from './backend-registry.js';
 
 export interface ThresholdEvent {
   id: string; at: number; sessionId: string; directory: string; title?: string;
@@ -24,12 +25,14 @@ const rank: Record<ThresholdEvent['delivery'], number> = { recorded: 0, attempte
 
 /** A single user-wide WAL database bounds retained events, not merely the currently rendered page. */
 export class AlertHistory {
+  readonly backends: BackendRegistry;
   private constructor(private db: Database) {
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;
       CREATE TABLE IF NOT EXISTS alert_settings (id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS threshold_events (id TEXT PRIMARY KEY,at INTEGER NOT NULL,data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS threshold_events_order ON threshold_events(at DESC,id DESC);
       CREATE TABLE IF NOT EXISTS alert_sources (id TEXT PRIMARY KEY,directory TEXT NOT NULL,path TEXT NOT NULL);`);
+    this.backends = new BackendRegistry(db);
   }
   static async open(path = alertsPath()): Promise<AlertHistory> { return new AlertHistory(await openDatabase(path)); }
   settings(): AlertSettings {

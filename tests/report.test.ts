@@ -132,9 +132,10 @@ test('a persisted bridge follows repeated backend restarts while other processes
     blockers.push(await listener((_request, response) => { staleRequests++; response.writeHead(503).end('{}'); }, Number(new URL(old.url).port)));
     backend = await Backend.start(store, { directory: root, descriptorPath: path });
     assert.notEqual(backend.descriptor.url, old.url, 'The backend must bind a free port while the old port is occupied');
+    const publicationChecks = staleRequests;
     const restored = new Bridge(pairings);
     assert.deepEqual(await restored.request(root, '/sessions', 'GET'), ['retained-session']);
-    assert.equal(staleRequests, 0, 'The saved descriptor path must be read before contacting an obsolete listener');
+    assert.equal(staleRequests, publicationChecks, 'The GUI must read the saved descriptor path without additional requests to an obsolete listener');
   }
 });
 

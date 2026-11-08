@@ -1,7 +1,6 @@
 import type { Store } from '../storage/store.js';
 import { createServer, type Server } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { authorized, body, respond } from './http.js';
 import type { StepQuery } from '../storage/store.js';
@@ -9,11 +8,14 @@ import type { ActivityQuery } from '../core/activity.js';
 import { exportReport } from './html.js';
 import { join } from 'node:path';
 import { Analysis } from '../analysis/analysis.js';
+import type { BackendRegistration } from '../storage/backend-registry.js';
+import { DescriptorFiles } from './descriptor.js';
 
 export interface Descriptor { version: 1; url: string; token: string; instance: string; directory: string }
 export interface BackendOptions {
   directory: string;
   descriptorPath?: string;
+  registry?: BackendRegistration;
   analysis?: Analysis;
   extra?: (path: string, session: string, input: any) => Promise<unknown>;
 }
@@ -85,9 +87,14 @@ export class Backend {
     });
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     descriptor.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    if (options.descriptorPath) {
-      mkdirSync(dirname(options.descriptorPath), { recursive: true, mode: 0o700 });
-      writeFileSync(options.descriptorPath, JSON.stringify(descriptor), { mode: 0o600 });
+    try {
+      if (options.descriptorPath) {
+        await DescriptorFiles.publish(options.directory, options.descriptorPath, descriptor, options.registry);
+      }
+    } catch (error) {
+      // A publication failure must not leave an untracked listener alive after plugin setup rejects.
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      throw error;
     }
     return new Backend(server, descriptor, analysis);
   }

@@ -32,7 +32,7 @@ export default Plugin.define({
     const generation = new OpenCodeGeneration(ctx, store, options.analysisModel);
     await generation.setup();
     const analysis = new Analysis(store, { resolve: (mode, session) => generation.resolve(mode, session), generate: job => generation.generate(job) });
-    const backend = await Backend.start(store, { directory, descriptorPath: join(root, `${key}.backend.json`), analysis });
+    const backend = await Backend.start(store, { directory, descriptorPath: join(root, `${key}.backend.json`), analysis, registry: history.backends });
     const controller = new AbortController();
     const models = new Map<string, number>();
     const refreshModels = async () => {

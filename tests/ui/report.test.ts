@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../../src/storage/store.js';
@@ -13,6 +13,7 @@ import { parseGuestMessage } from '@openchamber/sdk/schemas';
 import { assertRenderedBody } from '../review/body-check.mjs';
 import { AlertHistory } from '../../src/storage/alerts.js';
 import { GlobalAlertService } from '../../src/gui/alert-service.js';
+import { Bridge } from '../../src/gui/bridge.js';
 
 /** This fixture replaces only the external OpenChamber host; the SDK, browser DOM, backend and SQLite are real. */
 test('replay filters, expands, preserves state and exports without invoking a model', { timeout: 60000 }, async t => {
@@ -24,7 +25,8 @@ test('replay filters, expands, preserves state and exports without invoking a mo
     { id: 'global-other', at: Date.now() - 1000, directory: '/another-project', sessionId: 'session-other', title: 'Thread from another project', metric: 'compactions', value: 2, threshold: 2, kind: 'live', model: 'fixture/large', capacity: 64000, delivery: 'host-accepted' },
   ]);
   const store = await Store.open(join(root, 'state.sqlite'));
-  const backend = await Backend.start(store, { directory: '/project', descriptorPath: join(root, 'backend.json') });
+  const backend = await Backend.start(store, { directory: '/project', descriptorPath: join(root, 'backend.json'), registry: history.backends });
+  const pairings = join(root, 'pairings.json'), bridge = new Bridge(pairings, history.backends);
   store.ingest('s', [{ type: 'observe', id: 'initial', at: 0, tokens: 0, capacity: 1000, model: 'test', method: 'test', quality: 'reported' }]);
   for (let i = 1; i <= 3; i++) store.ingest('s', [
     { type: 'turn', id: `u${i}`, at: i, turnId: `u${i}` },
@@ -72,10 +74,10 @@ test('replay filters, expands, preserves state and exports without invoking a mo
         const result = await globals.handle(new URL(input.path, 'http://fixture.invalid'), input.method, input.body ? JSON.parse(input.body) : undefined);
         if (result !== undefined) return respond(res, 200, result);
       } catch (error) { return respond(res, 400, { error: String(error) }); }
-      const url = new URL(input.path, backend.descriptor.url);
+      const url = new URL(input.path, 'http://fixture.invalid');
       for (const [k, v] of Object.entries(input.query ?? {})) if (k !== 'directory') url.searchParams.set(k, String(v));
-      const r = await fetch(url, { method: input.method, headers: { Authorization: `Bearer ${backend.descriptor.token}`, 'X-Context-Monitor-Instance': backend.descriptor.instance }, body: input.body });
-      respond(res, r.status, await r.json());
+      try { respond(res, 200, await bridge.request(String(input.query?.directory ?? ''), url.pathname + url.search, input.method, input.body ? JSON.parse(input.body) : undefined)); }
+      catch (error) { respond(res, 400, { error: String(error) }); }
     } else { res.statusCode = 404; res.end(); }
   });
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
@@ -90,6 +92,14 @@ test('replay filters, expands, preserves state and exports without invoking a mo
     try { await frame.locator('details[data-activity]').first().waitFor(); }
     catch (error) { throw new Error(`${await frame.locator('#error').textContent()}\n${error}`); }
     assert.equal(await frame.locator('details[data-activity]').count(), 3);
+    await t.test('an unpaired project renders actual metrics and activity through registered discovery', async () => {
+      assert.match(await frame.locator('#metrics .metric').filter({ hasText: 'Current turn growth' }).innerText(), /1\.00 pp/);
+      assert.equal(await frame.locator('#error').innerText(), '');
+      assert.equal(existsSync(pairings), false);
+      await frame.locator('#pairing > summary').click();
+      assert.match(await frame.locator('#pairing .pair-note').innerText(), /automatically/i);
+      await frame.locator('#pairing > summary').click();
+    });
     await frame.getByLabel('Search activities').fill('file2');
     await page.waitForFunction(() => document.querySelector('iframe')!.contentDocument?.querySelectorAll('details[data-activity]').length === 1);
     assert.equal(await frame.locator('details[data-activity]').first().getAttribute('data-activity'), 'activity2');

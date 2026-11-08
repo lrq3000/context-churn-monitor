@@ -10,6 +10,7 @@ import { createServer as httpServer } from 'node:http';
 import { body, respond } from '../../src/reports/http.js';
 import { Store } from '../../src/storage/store.js';
 import { AlertHistory } from '../../src/storage/alerts.js';
+import { createHash } from 'node:crypto';
 
 const root = process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir();
 
@@ -79,6 +80,13 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
   await new Promise<void>(r => listener.close(() => r()));
   const alertHistory = await AlertHistory.open(join(profile, 'alerts.sqlite'));
   alertHistory.setSettings({ ...alertHistory.settings(), liveGrowth: 0.5 });
+  const retired = createServer();
+  await new Promise<void>(r => retired.listen(0, '127.0.0.1', r));
+  const retiredPort = (retired.address() as { port: number }).port;
+  await new Promise<void>(r => retired.close(() => r()));
+  mkdirSync(join(profile, 'monitor'));
+  const descriptorName = `${createHash('sha256').update(project).digest('hex').slice(0, 20)}.backend.json`;
+  writeFileSync(join(profile, 'monitor', descriptorName), JSON.stringify({ version: 1, url: `http://127.0.0.1:${retiredPort}`, token: 's'.repeat(64), instance: 'retired-fixture', directory: project }));
   const env = { ...process.env, XDG_CONFIG_HOME: join(profile, 'config'), XDG_DATA_HOME: join(profile, 'data'), XDG_STATE_HOME: join(profile, 'state'), XDG_CACHE_HOME: join(profile, 'cache'), OPENCODE_CONFIG: join(project, 'opencode.json'), OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_AUTOUPDATE: '1', CONTEXT_MONITOR_ALERTS_PATH: join(profile, 'alerts.sqlite'), OPENCHAMBER_AGENT_TOOL_URL: `http://127.0.0.1:${(notifications.address() as any).port}`, OPENCHAMBER_AGENT_TOOL_TOKEN: 'notification-fixture-only' };
   const child = spawn(process.env.CONTEXT_MONITOR_OPENCODE ?? 'opencode', ['serve', '--hostname', '127.0.0.1', '--port', String(port)], { cwd: project, env: { ...env, CONTEXT_MONITOR_FIXTURE_KEY: 'local-test-only' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
@@ -110,6 +118,8 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
     const descriptors = readdirSync(join(profile, 'monitor')).filter(name => name.endsWith('.backend.json'));
     assert.equal(descriptors.length, 1, JSON.stringify(result));
     const descriptor = JSON.parse(readFileSync(join(profile, 'monitor', descriptors[0]), 'utf8'));
+    assert.notEqual(descriptor.instance, 'retired-fixture', 'Real Bun startup must replace a retired descriptor, including its native connection-refused error shape');
+    assert.deepEqual(alertHistory.backends.paths(project), [join(profile, 'monitor', descriptors[0])], 'The real location-scoped plugin must publish its custom-root descriptor for automatic GUI discovery');
     const health = await fetch(descriptor.url + '/health', { headers: { Authorization: `Bearer ${descriptor.token}`, 'X-Context-Monitor-Instance': descriptor.instance } });
     assert.equal(health.status, 200);
     const password = /server password ([^\s]+)/.exec(output)![1];

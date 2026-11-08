@@ -9,9 +9,9 @@ import { GlobalAlertService } from './alert-service.js';
 const token = process.env.OPENCHAMBER_SERVICE_TOKEN;
 const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
 if (!token || !Number.isInteger(port) || port <= 0) throw new Error('Start this service through OpenChamber');
-const bridge = new Bridge(join(homedir(), '.local', 'share', 'context-churn-monitor', 'gui-pairings.json'));
 async function start(token: string): Promise<void> {
 const history = await AlertHistory.open();
+const bridge = new Bridge(join(homedir(), '.local', 'share', 'context-churn-monitor', 'gui-pairings.json'), history.backends);
 const globals = new GlobalAlertService(history);
 const server = createServer(async (request, response) => {
   if (!authorized(request, token)) return respond(response, 401, { error: 'Authentication required' });

@@ -30,7 +30,7 @@ class ReportPanel {
     document.querySelector('#app')!.innerHTML = `
       <h1>Context Churn Monitor</h1><p class="muted report-only">Context growth and compactions · deterministic monitoring</p>
       <div id="error" role="alert"></div><div id="action-error" role="alert"></div><div id="notice" class="muted" role="status"></div>
-      <details id="pairing" class="report-only"><summary>Connect monitoring backend</summary><p class="pair-note muted">Enter the backend descriptor file for this project. Credentials remain in the local service.</p><label>Backend descriptor path<input id="descriptor" placeholder="Absolute path to ….backend.json"></label><div id="pair-button" class="buttons"></div></details>
+      <details id="pairing" class="report-only"><summary>Connection settings (advanced)</summary><p class="pair-note muted">Connects automatically to this project's registered backend. Use a manual descriptor only to override the connection or select between multiple backends. Credentials remain in the local service.</p><label>Manual backend descriptor path<input id="descriptor" placeholder="Absolute path to ….backend.json"></label><div id="pair-button" class="buttons"></div></details>
       <div id="metrics" class="metrics"></div><div id="chart"></div><p id="quality" class="muted"></p>
       <div class="toolbar"><label><span><input id="warnings" type="checkbox" checked> Automatic warnings</span></label><label><span><input id="details-toggle" type="checkbox" checked> Step details</span></label><div id="view-button"></div></div>
       <section id="global-alerts" class="report-only"></section>

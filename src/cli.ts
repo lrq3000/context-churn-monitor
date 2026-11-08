@@ -30,7 +30,7 @@ try {
     store.close(); history.close();
   } else if (command === 'serve') {
     const path = join(root, 'codex.backend.json');
-    const backend = await Backend.start(store, { directory: process.cwd(), descriptorPath: path });
+    const backend = await Backend.start(store, { directory: process.cwd(), descriptorPath: path, registry: history.backends });
     console.log(`Context Monitor pairing file: ${path}`);
     const stop = async () => { await backend.close(); store.close(); history.close(); process.exit(0); };
     process.once('SIGTERM', stop); process.once('SIGINT', stop);

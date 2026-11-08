@@ -7,10 +7,15 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AlertHistory } from '../src/storage/alerts.js';
+import { Store } from '../src/storage/store.js';
+import { Backend } from '../src/reports/backend.js';
 
 test('authenticated global alert routes need no project, session or backend pairing', async () => {
   const root = mkdtempSync(join(process.env.CONTEXT_MONITOR_TEST_TMP ?? tmpdir(), 'alert-service-'));
   const history = await AlertHistory.open(join(root, 'alerts.sqlite'));
+  const store = await Store.open(':memory:');
+  store.ingest('current', [{ type: 'turn', id: 'u', turnId: 'actual-turn', at: 1 }]);
+  const backend = await Backend.start(store, { directory: root, descriptorPath: join(root, 'custom-data', 'backend.json'), registry: history.backends });
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
   const port = (listener.address() as any).port; await new Promise<void>(resolve => listener.close(() => resolve()));
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/gui/service.ts'], { env: { ...process.env, OPENCHAMBER_SERVICE_PORT: String(port), OPENCHAMBER_SERVICE_TOKEN: 'fixture-only', CONTEXT_MONITOR_ALERTS_PATH: join(root, 'alerts.sqlite') }, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
@@ -32,5 +37,8 @@ test('authenticated global alert routes need no project, session or backend pair
     assert.deepEqual((await response.json() as any).items, []);
     assert.equal((await fetch(origin + '/notification-settings', { method: 'POST', headers, body: JSON.stringify({ minContextWindow: -1 }) })).status, 400);
     assert.equal(history.settings().minContextWindow, 64000);
-  } finally { child.kill(); child.stderr.destroy(); history.close(); }
+    const snapshot = await fetch(origin + '/snapshot?' + new URLSearchParams({ directory: root, session: 'current' }), { headers });
+    assert.equal(snapshot.status, 200, await snapshot.clone().text());
+    assert.equal((await snapshot.json() as any).state.turn.id, 'actual-turn', 'The actual child service must use automatic registry discovery, not a fixture-only route');
+  } finally { child.kill(); child.stderr.destroy(); await backend.close(); store.close(); history.close(); }
 });
