@@ -1,6 +1,6 @@
 {
   "name": "context-churn-monitor",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Context-growth and compaction monitoring with activity replay for OpenCode V2, Codex hooks and an optional OpenChamber interface",
   "author": {
     "name": "Stephen Karl Larroque",
@@ -9,12 +9,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lrq3000/lrq3000_agent_skills.git",
-    "directory": "plugins/context-churn-monitor"
+    "url": "git+https://github.com/lrq3000/context-churn-monitor.git"
   },
-  "homepage": "https://github.com/lrq3000/lrq3000_agent_skills/tree/main/plugins/context-churn-monitor#readme",
+  "homepage": "https://github.com/lrq3000/context-churn-monitor#readme",
   "bugs": {
-    "url": "https://github.com/lrq3000/lrq3000_agent_skills/issues"
+    "url": "https://github.com/lrq3000/context-churn-monitor/issues"
   },
   "keywords": [
     "opencode",
@@ -26,7 +25,7 @@
     "monitoring"
   ],
   "metadata": {
-    "version": "0.4.0",
+    "version": "0.4.1",
     "creation": "2026-11-03",
     "last_updated": "2026-11-10"
   },
@@ -48,7 +47,8 @@
     "plugin.json",
     "AUTHOR.txt",
     "LICENSE.txt",
-    "README.md"
+    "README.md",
+    "HISTORY.md"
   ],
   "type": "module",
   "engines": {

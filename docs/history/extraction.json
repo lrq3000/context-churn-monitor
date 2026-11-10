@@ -1,0 +1,31 @@
+{
+  "sourceRepository": "https://github.com/lrq3000/lrq3000_agent_skills",
+  "sourceBase": "f138c926411e3f25e06ed84fb90e9f31e75e4c04",
+  "extractedHead": "366e74bed245f3d679bec4538529ee1129c22000",
+  "pluginPrefix": "plugins/context-churn-monitor/",
+  "documents": [
+    "docs/superpowers/plans/2026-11-03-context-churn-monitor-progress.md",
+    "docs/superpowers/plans/2026-11-03-context-churn-monitor.md",
+    "docs/superpowers/plans/2026-11-06-context-monitor-fetch-fix.md",
+    "docs/superpowers/plans/2026-11-07-context-monitor-replay.md",
+    "docs/superpowers/plans/2026-11-08-context-monitor-alert-history.md",
+    "docs/superpowers/plans/2026-11-08-context-monitor-pairing.md",
+    "docs/superpowers/specs/2026-11-03-context-churn-monitor-design.md",
+    "docs/superpowers/specs/2026-11-07-context-monitor-replay-design.md",
+    "docs/superpowers/specs/2026-11-08-context-monitor-alert-history-design.md",
+    "docs/superpowers/specs/2026-11-08-context-monitor-pairing-design.md",
+    "docs/verification/2026-11-08-context-monitor-alert-history.md",
+    "docs/verification/2026-11-08-context-monitor-notifications.md",
+    "docs/verification/2026-11-08-context-monitor-pairing.md"
+  ],
+  "commits": [
+    { "source": "105332aa5686dfae3567752d1cc2a291e0115a7b", "extracted": "e238f445425aa0f526e52d955004c9eea3dfa113" },
+    { "source": "2e9f8222d2673aec3d89ffed46e29f11ff4195eb", "extracted": "35ee10198f38c477f0fdfc0493cebb1dcd3f9761" },
+    { "source": "72c2233215aee79d1ecc3e64ecca69e1f118a473", "extracted": "cb70ab8440adeb24689c71e3ceacd54e785ad34e" },
+    { "source": "1bb7822cd7e16da6e021796fdd77c971f87a3623", "extracted": "679f99a6191b2873f7af0643a05eb2290c3388ea" },
+    { "source": "bf5b3462cf8e71e71fc91fdf8c062515cff07326", "extracted": "b3fba031c25a8a488baeafae35ee61ae783226c2" },
+    { "source": "f5086fb29c028f0ac9893127a346baefcfb611e2", "extracted": "359a7edc9bcd8c220e4b1f7375203bbae02089f8" },
+    { "source": "591b11405959c1c58622a1d0ea870258e9cb2b2c", "extracted": "b44e3301e1e8bde935b2f45ab863c7a3ec01e9a3" },
+    { "source": "f138c926411e3f25e06ed84fb90e9f31e75e4c04", "extracted": "366e74bed245f3d679bec4538529ee1129c22000" }
+  ]
+}

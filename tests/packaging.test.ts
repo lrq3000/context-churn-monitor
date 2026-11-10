@@ -28,8 +28,11 @@ test('npm publication identifies the public package, author and Apache license',
   assert.ok(manifest.description?.length);
   assert.deepEqual(manifest.author, { name: 'Stephen Karl Larroque', email: 'LRQ3000@gmail.com' });
   assert.equal(manifest.license, 'Apache-2.0');
-  assert.equal(manifest.repository?.url, 'git+https://github.com/lrq3000/lrq3000_agent_skills.git');
-  assert.equal(manifest.repository?.directory, 'plugins/context-churn-monitor');
+  assert.equal(manifest.version, '0.4.1');
+  assert.equal(manifest.repository?.url, 'git+https://github.com/lrq3000/context-churn-monitor.git');
+  assert.equal(manifest.repository?.directory, undefined, 'standalone repository installs from its root');
+  assert.equal(manifest.homepage, 'https://github.com/lrq3000/context-churn-monitor#readme');
+  assert.equal(manifest.bugs?.url, 'https://github.com/lrq3000/context-churn-monitor/issues');
   assert.equal(manifest.publishConfig?.registry, 'https://registry.npmjs.org/');
   assert.equal(manifest.publishConfig?.access, 'public');
 });
@@ -42,7 +45,7 @@ test('npm archive contains loadable backend, hook, worker, skill and OpenChamber
     'skills/context-churn-diagnostics/SKILL.md',
     'openchamber/package.json', 'openchamber/panel/index.html',
     'openchamber/panel/app.js', 'openchamber/service.cjs',
-    'AUTHOR.txt', 'LICENSE.txt', 'README.md',
+    'AUTHOR.txt', 'LICENSE.txt', 'README.md', 'HISTORY.md',
   ]) assert.ok(files.has(path), `Missing installed resource: ${path}`);
 });
 
