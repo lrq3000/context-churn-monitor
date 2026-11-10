@@ -49,6 +49,13 @@ test('npm archive contains loadable backend, hook, worker, skill and OpenChamber
   ]) assert.ok(files.has(path), `Missing installed resource: ${path}`);
 });
 
+test('published Codex installation instructions link to a public marketplace guide', () => {
+  const readme = readFileSync(resolve(root, 'README.md'), 'utf8');
+  const codex = readme.split('### Codex')[1]?.split('### OpenChamber')[0] ?? '';
+  assert.match(codex, /https:\/\/developers\.openai\.com\/plugins\/build\/plugins/);
+  assert.doesNotMatch(codex, /github\.com\/lrq3000\/lrq3000_agent_skills\/blob\/main\/INSTALL\.md/);
+});
+
 test('npm archive excludes development sources, dependencies and private runtime data', () => {
   assert.ok(Array.isArray(manifest.files), 'publication needs an explicit allowlist');
   for (const path of files) {
