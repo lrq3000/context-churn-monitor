@@ -1,6 +1,6 @@
 # Context Churn Monitor
 
-Deterministic context-growth and compaction monitoring with a readable chronological activity replay for OpenCode V2 and available modern Codex hook evidence. The optional separately installed OpenChamber interface shows titles, command/file previews, expandable captured text and request diagnostics. Monitoring, titles, filtering, exports and analysis preparation make no model calls. Optional analysis uses a frozen preview and single-use Run-button authorization.
+Deterministic context-growth and compaction monitoring with a readable chronological activity replay for OpenCode V2 and available modern Codex hook evidence. The optional OpenChamber extension shows titles, command/file previews, expandable captured text and request diagnostics, and can activate the backend and diagnostic skill in one installation. Monitoring, titles, filtering, exports and analysis preparation make no model calls. Optional analysis uses a frozen preview and single-use Run-button authorization.
 
 ## Installation units and runtime status
 
@@ -8,10 +8,21 @@ Deterministic context-growth and compaction monitoring with a readable chronolog
 | --- | --- | --- |
 | OpenCode backend | This complete directory; `package.json` exports `dist/adapters/opencode/index.js` | OpenCode V2; native loading, real lifecycle events and bounded local-provider generation tested on 2.2.1 against plugin SDK 2.2.5. |
 | Codex backend | This complete built directory; root `plugin.json` and `hooks/hooks.json` | A Codex version supporting the documented `PreModelRequest`, `PostModelRequest`, `PostCompact` and turn hooks. Installed CLI 0.63.0 is too old; fixtures and CLI stdin are tested, native hook activation is unverified. |
-| OpenChamber UI | Complete built `openchamber/` directory | Manifest targets OpenChamber ≥1.24.0; validated with SDK 2.6.0. Native installation, capability grants, pairing and rendered metrics/rows verified on OpenChamber 2.5.3. Real Chrome interaction tests validate the SDK wire contract through a postMessage host fixture. |
+| Unified OpenChamber extension | Complete built package root, including `dist/`, `skills/` and `openchamber/` | OpenChamber ≥2.7.0; manifest validated with SDK 2.7.0. Native `opencodePlugin` and `skills` contributions require user approval and a local managed OpenCode. |
+| Legacy UI-only extension | Complete built `openchamber/` directory | Retains its independent manifest targeting OpenChamber ≥1.24.0; it does not activate the backend or skill. Earlier native UI installation/pairing was verified on OpenChamber 2.5.3; Chrome host-fixture tests cover the SDK wire contract. |
 | Portable diagnostic skill | `skills/context-churn-diagnostics/` | Instruction-only; can be installed independently. Does not activate hooks or collect metrics. |
 
-Build the backend before registering it. Node ≥22.13 is declared; development/runtime tests used Node 24.12.0. SQLite is `node:sqlite` in the CLI and `bun:sqlite` in OpenCode, with no native npm addon.
+### What is self-contained?
+
+The npm package contains the built backend and all plugin-owned runtime resources. npm installs its declared JavaScript dependencies automatically; consumers do not need a compiler, Python, a separate database server or a native SQLite addon. Node and a compatible OpenCode or modern Codex host remain prerequisites. Deterministic monitoring, alerts and exports do not require a model provider or the diagnostic skill. Optional analysis still requires a usable model route in the chosen host.
+
+The diagnostic skill is optional guidance for the agent, not executable logic required by the backend. In the unified OpenChamber installation, the native `skills` contribution registers it after the user approves that capability. Loading only the npm plugin in OpenCode does not itself register a skill source: optionally install its complete directory into a supported skills location or add the stable installed package's absolute `skills/` directory to OpenCode's `skills` array. Do not assume files inside `node_modules` are discovered automatically. No package lifecycle script modifies the user's global configuration.
+
+The compiled OpenChamber interface is included. Register the package root once through OpenChamber's extension installer and approve its capabilities; the native host then activates the interface, backend and skill together. Installing only the backend in OpenCode does not register an OpenChamber extension. Codex still needs its native plugin/hook registration. These are host activation requirements, not missing npm runtime files. No unpublished personal plugin or separate npm UI package is required.
+
+Release 0.4.0 prepares public npm distribution and adds native unified OpenChamber installation without changing monitoring calculations. Node ≥22.13 is declared; original development/runtime tests used Node 24.12.0 and release packaging checks used Node 24.22.2. SQLite is `node:sqlite` in the CLI and `bun:sqlite` in OpenCode, with no native npm addon. Consumers of the prebuilt archive do not need TypeScript or a local build. The backend entrypoint also loads from an extracted package without `node_modules`; its SDK is used only for compile-time types.
+
+For a source checkout, build the backend and interface before registering them:
 
 ```sh
 npm ci
@@ -20,13 +31,13 @@ npm run build
 
 ### OpenCode V2
 
-Merge this entry into the desired user-wide or project-local `opencode.json(c)`, preserving unrelated configuration. Replace the absolute path; forward slashes work in Windows JSON. Installation into an everyday profile is a separate explicit action.
+After `context-churn-monitor@0.4.0` is published on npm, merge this entry into the desired user-wide or project-local `opencode.json(c)`, preserving unrelated configuration. OpenCode resolves and installs the npm package; pinning its version makes updates explicit. Installation into an everyday profile is a separate explicit action.
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [{
-    "package": "/ABSOLUTE/REPO/plugins/context-churn-monitor",
+    "package": "context-churn-monitor@0.4.0",
     "options": {
       "dataDir": "/ABSOLUTE/PRIVATE/context-monitor",
       "analysisModel": "provider/model",
@@ -35,6 +46,8 @@ Merge this entry into the desired user-wide or project-local `opencode.json(c)`,
   }]
 }
 ```
+
+For a built source checkout, use `"package": "/ABSOLUTE/REPO/plugins/context-churn-monitor"` instead; forward slashes work in Windows JSON. The npm package does not require access to the source GitHub repository. Repository, homepage and issue links still require GitHub access while that repository remains private.
 
 `analysisModel` is optional; omit it if only session-model or OpenChamber analysis is wanted. V2 reloads configuration; `/reload` forces reload when needed. Plugin setup is location-scoped and lazy until a session initializes. Check the host's plugin listing and a new session before concluding that discovery failed.
 
@@ -54,7 +67,13 @@ Run `serve` in the project directory to be paired. It prints the descriptor path
 
 ### OpenChamber
 
-After building, install the complete `openchamber/` folder through Settings → Extensions using the host's local extension workflow. It contains `package.json`, `panel/index.html`, bundled `panel/app.js`, and `service.cjs`; it is independent of the backend package and needs no npm dependencies at runtime. Approve the declared local service and model capability through the host's ordinary extension controls. Release 0.3.0 additionally requests `sessions` for explicit **Go to the session** navigation; approval is required when upgrading, and denied/missing access is reported without inventing a deep link. This feature does not read conversation contents.
+For unified installation, use OpenChamber ≥2.7.0. After npm publication, run `npm install --ignore-scripts --save-exact context-churn-monitor@0.4.0` in a stable local installation directory, then open Settings → Extensions, add the absolute path of `node_modules/context-churn-monitor/` and approve the requested permissions. Select the **package root**, not its `openchamber/` subfolder. A built source checkout can be installed using the same package root. OpenChamber accepts a folder, ZIP or supported URL, not a bare npm package name; the npm command downloads the complete package and the one native extension registration activates its components. Do not use an ephemeral npm cache folder as an installation path.
+
+The root manifest declares `opencodePlugin: "dist/adapters/opencode"` and `skills: "skills"` alongside the compiled interface/service. In addition to the existing service, model and sessions permissions, the dialog asks to add an OpenCode plugin and agent skills. Plugin and service code run with the user's access; approve only a trusted installation. With a local OpenCode managed by OpenChamber, its native managed configuration registers the backend and skill together. Disabling/removing the extension removes those managed contributions; no global `opencode.json` entry is written by this package.
+
+When OpenChamber uses an externally started OpenCode, an overriding `OPENCODE_CONFIG`, a remote server or an isolated space, automatic delivery can differ or be unavailable. Follow the host's reported delivery state; its explicit **Add to global config** action, when offered, creates a user-owned entry that persists independently of the extension. Do not silently use that fallback. Before migrating an existing manual installation, review its configuration and avoid keeping a second active backend entry for the same installation. Existing installed extensions may need their path replaced and new permissions approved through the host; this release does not rewrite everyday installations automatically.
+
+The `openchamber/` subfolder remains a legacy UI-only installation unit for users who manage the backend separately. It contains `package.json`, `panel/index.html`, bundled `panel/app.js`, `service.cjs`, `AUTHOR.txt` and `LICENSE.txt`; it does not declare the unified backend/skill contributions. No second npm package named `context-churn-monitor-ui` is published. Release 0.3.0's `sessions` permission enables explicit **Go to the session** navigation; denied/missing access is reported without inventing a deep link and does not expose conversation contents.
 
 The extension's `package.json` keeps `name` and `version` at the top level and nests `apiVersion`, `engines` and `contributes` inside `openchamber`. The native installer requires the package version returned by `parseManifestJson`; an unwrapped manifest can pass inner-manifest validation but still be rejected with the generic “package.json is invalid. panel.id must be kebab-case” message.
 
@@ -136,21 +155,27 @@ npm run test:smoke
 npm run test:ui
 ```
 
-Set `CONTEXT_MONITOR_TEST_TMP` to an existing test-artifact directory. Smoke uses an isolated OpenCode profile and a loopback fake provider; no paid provider call is needed. UI testing requires installed Chrome. Generated profiles, databases, exports, logs and desktop/mobile screenshots are retained for manual cleanup. The local service binds loopback and authenticates requests; never publish a backend descriptor or pairing file.
+Set `CONTEXT_MONITOR_TEST_TMP` to an existing test-artifact directory. Smoke uses an isolated OpenCode profile and a loopback fake provider; no paid provider call is needed. `CONTEXT_MONITOR_PLUGIN_ROOT` optionally tests the native contributed plugin folder instead of the package root. To run installed-host integration checks, additionally set `CONTEXT_MONITOR_PACKED_ROOT` to a dependency-free extracted package and `CONTEXT_MONITOR_OPENCHAMBER_ASAR` to the installed OpenChamber 2.7.0 archive; otherwise those two host checks are explicitly skipped. They exercise the installed host's unmodified resolver and permission-gating modules in a temporary harness and run the SDK checker; they do not modify the live extension catalog. UI testing defaults to installed Chrome; set `CONTEXT_MONITOR_BROWSER` to an existing compatible Chromium executable if needed. Generated profiles, databases, exports, logs and desktop/mobile screenshots are retained for manual cleanup. The local service binds loopback and authenticates requests; never publish a backend descriptor or pairing file.
 
 Native Codex hook activation (including Windows hook expansion and Stop-continuation identity), optional notifications and arbitrary third-party tokenizers/provider runtimes remain unverified. Native OpenCode smoke tests verify delivered user input and response lifecycle capture plus bounded local generation; richer event families also have SDK-shaped reducer tests. Chrome host-fixture coverage exercises search, filters, pagination, expansion persistence, exports, Small Model default and double-click/uncertain-result single invocation. Paid-provider and native Small Model generation were not invoked. Stable Codex event IDs are not guaranteed: supplied IDs are deduplicated, otherwise each invocation gets a UUID and host redelivery cannot be distinguished from a genuinely repeated attempt. Model IDs and budgets are frozen, but provider/model definitions are not snapshotted: keep their configuration unchanged between preview and invocation and prepare a new job after configuration changes. Current model limits are rechecked before generation. Use provenance and coverage gaps when interpreting low metrics.
 
 Contracts consulted in November 2026: [OpenCode V2 plugins](https://opencode.ai/v2/docs/build/plugins/server), [providers](https://opencode.ai/v2/docs/providers), [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Codex plugin packaging](https://developers.openai.com/plugins/build/plugins), [OpenChamber SDK](https://docs.openchamber.dev/sdk/).
 
+## License and publication
+
+Copyright 2026 Stephen Karl Larroque <LRQ3000@gmail.com>. This package is licensed under the Apache License, Version 2.0; see [LICENSE.txt](LICENSE.txt) and [AUTHOR.txt](AUTHOR.txt). Dependencies retain their own licenses. The separately installed OpenChamber folder includes the same package attribution and Apache license, followed by the MIT notice for the SDK code bundled in its panel.
+
+Publish only from the complete source directory after checking the tests and archive inventory. `prepack` runs `npm run build` before creating a package; the explicit `files` list includes the generated JavaScript even though Git ignores it, and excludes development sources, tests and local runtime data. An npm installation uses the prebuilt archive and does not run this compilation. Before publishing, authenticate with npm in your own terminal, run `npm pack --dry-run --json`, create and test the actual archive, then publish that verified archive to `https://registry.npmjs.org/` with public access. Never include backend descriptors, SQLite stores, exports, pairing files or npm credentials. The public npm artifact is independent of the repository's private visibility, and a published name/version cannot be reused.
+
 ## Source version and date records
 
-The backend package, portable manifest and independently installable UI share release version `0.3.1`; package-lock mirrors agree. Their records use last update `2026-11-08`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. Configuration-only files inherit the plugin release: the settings schema adds `minContextWindow` in 0.3.0 without an independent version increment. Existing custom records in the schema, TypeScript configuration and hooks remain `1.0.0` / `2026-11-06` as historical artifact records, not current release or host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
+The backend package, root unified extension, portable manifest and legacy independently installable UI share release version `0.4.0`; package-lock mirrors agree. Their records use last update `2026-11-10`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. Configuration-only files inherit the plugin release: the settings schema adds `minContextWindow` in 0.3.0 without an independent version increment. Existing custom records in the schema, TypeScript configuration and hooks remain `1.0.0` / `2026-11-06` as historical artifact records, not current release or host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
 
 The [portable manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) rejects a root `metadata` property; arbitrary root metadata in the hook file is not an established host contract. The user-approved records for those two files therefore live here, outside their runtime configuration. The hook record was added on the recorded update date; hook commands themselves were not changed by this revision.
 
 ```json
 {
-  "plugin.json": { "metadata": { "version": "0.3.1", "creation": "2026-11-03", "last_updated": "2026-11-08" } },
+  "plugin.json": { "metadata": { "version": "0.4.0", "creation": "2026-11-03", "last_updated": "2026-11-10" } },
   "hooks/hooks.json": { "metadata": { "version": "1.0.0", "creation": "2026-11-03", "last_updated": "2026-11-06" } }
 }
 ```

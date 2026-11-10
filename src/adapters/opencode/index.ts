@@ -1,4 +1,4 @@
-import { Plugin } from '@opencode/plugin';
+import type { Plugin } from '@opencode/plugin';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -12,8 +12,8 @@ import { OpenChamberNotifications } from './notifications.js';
 import { AlertHistory } from '../../storage/alerts.js';
 import { AlertPipeline } from '../../alerts/pipeline.js';
 
-/** A location-scoped plugin uses durable event IDs for deduplication and keeps reports outside session messages. */
-export default Plugin.define({
+/** A location-scoped plugin uses durable event IDs for deduplication and keeps reports outside session messages. The plain typed object also loads from native extension folders without installed SDK dependencies. */
+export default {
   id: 'context-churn-monitor',
   async setup(ctx) {
     const options = ctx.options as { dataDir?: string; monitor?: Partial<Config>; analysisModel?: string };
@@ -72,4 +72,4 @@ export default Plugin.define({
     })();
     return async () => { controller.abort(); await Promise.all([hook.dispose(), requestHook.dispose(), responseHook.dispose(), socketHook.dispose()]); await task; await backend.close(); await generation.dispose(); store.close(); history.close(); };
   },
-});
+} satisfies Plugin.Plugin;

@@ -65,7 +65,7 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
   await new Promise<void>(r => provider.listen(0, '127.0.0.1', r));
   const config = {
     model: 'fixture/test',
-    plugins: [{ package: resolve('.'), options: { dataDir: join(profile, 'monitor'), analysisModel: 'fixture/test', monitor: { outputBudget: 37, liveGrowth: 0.5 } } }],
+    plugins: [{ package: process.env.CONTEXT_MONITOR_PLUGIN_ROOT ?? resolve('.'), options: { dataDir: join(profile, 'monitor'), analysisModel: 'fixture/test', monitor: { outputBudget: 37, liveGrowth: 0.5 } } }],
     mcp: { servers: {} },
     providers: { fixture: {
       env: ['CONTEXT_MONITOR_FIXTURE_KEY'], package: `@opencode/ai/providers/${runtime}`,

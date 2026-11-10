@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+import { chromium, type Browser } from 'playwright';
 import { createServer } from 'node:http';
 import { readFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -81,8 +81,9 @@ test('replay filters, expands, preserves state and exports without invoking a mo
     } else { res.statusCode = 404; res.end(); }
   });
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  let browser: Browser | undefined;
   try {
+    browser = await chromium.launch({ ...(process.env.CONTEXT_MONITOR_BROWSER ? { executablePath: process.env.CONTEXT_MONITOR_BROWSER } : { channel: 'chrome' }), headless: true });
     const page = await browser.newPage({ viewport: { width: 720, height: 1100 } });
     page.setDefaultTimeout(5000);
     const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
@@ -331,5 +332,5 @@ test('replay filters, expands, preserves state and exports without invoking a mo
         release(); await settled; await page.unroute('**/proxy', handler);
       }
     });
-  } finally { await browser.close(); await new Promise<void>(r => server.close(() => r())); await backend.close(); store.close(); history.close(); }
+  } finally { await browser?.close(); await new Promise<void>(r => server.close(() => r())); await backend.close(); store.close(); history.close(); }
 });

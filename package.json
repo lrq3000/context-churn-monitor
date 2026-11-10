@@ -1,12 +1,55 @@
 {
   "name": "context-churn-monitor",
-  "version": "0.3.1",
-  "metadata": {
-    "version": "0.3.1",
-    "creation": "2026-11-03",
-    "last_updated": "2026-11-08"
+  "version": "0.4.0",
+  "description": "Context-growth and compaction monitoring with activity replay for OpenCode V2, Codex hooks and an optional OpenChamber interface",
+  "author": {
+    "name": "Stephen Karl Larroque",
+    "email": "LRQ3000@gmail.com"
   },
-  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lrq3000/lrq3000_agent_skills.git",
+    "directory": "plugins/context-churn-monitor"
+  },
+  "homepage": "https://github.com/lrq3000/lrq3000_agent_skills/tree/main/plugins/context-churn-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/lrq3000/lrq3000_agent_skills/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "openchamber",
+    "codex",
+    "context",
+    "compaction",
+    "monitoring"
+  ],
+  "metadata": {
+    "version": "0.4.0",
+    "creation": "2026-11-03",
+    "last_updated": "2026-11-10"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "dist/",
+    "hooks/hooks.json",
+    "skills/context-churn-diagnostics/",
+    "openchamber/package.json",
+    "openchamber/panel/index.html",
+    "openchamber/panel/app.js",
+    "openchamber/service.cjs",
+    "openchamber/AUTHOR.txt",
+    "openchamber/LICENSE.txt",
+    "config.schema.json",
+    "plugin.json",
+    "AUTHOR.txt",
+    "LICENSE.txt",
+    "README.md"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -15,15 +58,49 @@
     ".": "./dist/adapters/opencode/index.js",
     "./core": "./dist/core/monitor.js"
   },
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.7.0"
+    },
+    "contributes": {
+      "panel": {
+        "id": "context-churn-monitor",
+        "name": "Context Churn Monitor",
+        "icon": "ri-pulse-line",
+        "entry": "openchamber/panel/index.html"
+      },
+      "statusSection": {
+        "entry": "openchamber/panel/index.html",
+        "title": "Context Churn Monitor",
+        "height": 240,
+        "defaultExpanded": true,
+        "requiresProject": true
+      },
+      "attach": "dialog",
+      "capabilities": [
+        "model",
+        "sessions"
+      ],
+      "service": {
+        "entry": "openchamber/service.cjs",
+        "runtime": "host",
+        "permissions": {}
+      },
+      "opencodePlugin": "dist/adapters/opencode",
+      "skills": "skills"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc && node scripts/build.mjs",
+    "prepack": "npm run build",
     "test:smoke": "node --import tsx --test tests/smoke/*.test.ts",
     "test:ui": "node --import tsx --test tests/ui/*.test.ts"
   },
   "dependencies": {
-    "@openchamber/sdk": "2.6.0",
+    "@openchamber/sdk": "2.7.0",
     "@opencode/plugin": "2.2.5"
   },
   "devDependencies": {
