@@ -67,6 +67,8 @@ Run `serve` in the project directory to be paired. It prints the descriptor path
 
 ### OpenChamber
 
+Since OpenChamber v2.7.1, plugins are supported on Android and iOS, as well as in the desktop and web interfaces. This interface support does not remove the backend, service, permission or host requirements below.
+
 For unified installation, use OpenChamber ≥2.7.0. Run `npm install --ignore-scripts --save-exact context-churn-monitor@0.4.1` in a stable local installation directory, then open Settings → Extensions, add the absolute path of `node_modules/context-churn-monitor/` and approve the requested permissions. Select the **package root**, not its `openchamber/` subfolder. A built source checkout can be installed using the same package root. OpenChamber accepts a folder, ZIP or supported URL, not a bare npm package name; the npm command downloads the complete package and the one native extension registration activates its components. Do not use an ephemeral npm cache folder as an installation path.
 
 The root manifest declares `opencodePlugin: "dist/adapters/opencode"` and `skills: "skills"` alongside the compiled interface/service. In addition to the existing service, model and sessions permissions, the dialog asks to add an OpenCode plugin and agent skills. Plugin and service code run with the user's access; approve only a trusted installation. With a local OpenCode managed by OpenChamber, its native managed configuration registers the backend and skill together. Disabling/removing the extension removes those managed contributions; no global `opencode.json` entry is written by this package.
