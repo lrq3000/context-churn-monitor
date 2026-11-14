@@ -5,6 +5,8 @@ import { Bridge } from './bridge.js';
 import { authorized, body, respond } from '../reports/http.js';
 import { AlertHistory } from '../storage/alerts.js';
 import { GlobalAlertService } from './alert-service.js';
+import { createServiceHost } from '@openchamber/sdk';
+import { SessionMarks } from './marks.js';
 
 const token = process.env.OPENCHAMBER_SERVICE_TOKEN;
 const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
@@ -13,6 +15,7 @@ async function start(token: string): Promise<void> {
 const history = await AlertHistory.open();
 const bridge = new Bridge(join(homedir(), '.local', 'share', 'context-churn-monitor', 'gui-pairings.json'), history.backends);
 const globals = new GlobalAlertService(history);
+const marks = new SessionMarks(history, createServiceHost({ env: process.env }));
 const server = createServer(async (request, response) => {
   if (!authorized(request, token)) return respond(response, 401, { error: 'Authentication required' });
   try {
@@ -34,6 +37,7 @@ const server = createServer(async (request, response) => {
   } catch (error) { respond(response, 400, { error: error instanceof Error ? error.message : 'Request failed' }); }
 });
 server.listen(port, '127.0.0.1');
-process.once('SIGTERM', () => server.close(() => history.close()));
+marks.start();
+process.once('SIGTERM', () => { void marks.stop().then(() => server.close(() => history.close())); });
 }
 void start(token).catch(error => { console.error('[context-monitor] GUI service could not start', error); process.exitCode = 1; });

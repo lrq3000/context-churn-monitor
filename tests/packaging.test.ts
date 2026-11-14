@@ -90,10 +90,25 @@ test('the npm root is a native OpenChamber extension contributing its backend an
   const contributes = parsed.manifest.contributes;
   assert.equal(contributes.opencodePlugin, 'dist/adapters/opencode');
   assert.equal(contributes.skills, 'skills');
-  assert.equal(parsed.manifest.engines?.openchamber, '>=2.7.0');
+  assert.equal(parsed.manifest.engines?.openchamber, '>=2.7.1');
   for (const path of [contributes.panel.entry, contributes.statusSection.entry, contributes.service.entry, `${contributes.opencodePlugin}/index.js`, `${contributes.skills}/context-churn-diagnostics/SKILL.md`]) assert.ok(files.has(path), `Missing native extension resource: ${path}`);
   const capabilities = requestedGuestCapabilities(contributes);
-  for (const capability of ['service', 'model', 'sessions', 'skills', 'opencodePlugin']) assert.ok(capabilities.includes(capability), `Host approval must cover ${capability}`);
+  for (const capability of ['service', 'model', 'sessions', 'skills', 'opencodePlugin', 'marks']) assert.ok(capabilities.includes(capability), `Host approval must cover ${capability}`);
+});
+
+test('both installation units opt the full panel into mobile and request persistent native sidebar marks', () => {
+  const ui = JSON.parse(readFileSync(resolve(root, 'openchamber/package.json'), 'utf8'));
+  for (const unit of [manifest, ui]) {
+    const parsed = parseManifestJson(JSON.stringify(unit));
+    assert.ok(parsed.ok, JSON.stringify(parsed));
+    const contributes = parsed.manifest.contributes;
+    assert.equal(contributes.panel.mobile, true, 'The phone must expose the full step-details panel');
+    assert.equal(contributes.marks, true);
+    assert.equal(contributes.service.keepRunning, true, 'Marks must not depend on an open panel');
+    assert.equal(contributes.page, undefined, 'Reuse the panel rather than adding a duplicate full-screen page');
+    assert.equal(parsed.manifest.engines?.openchamber, '>=2.7.1');
+    assert.ok(requestedGuestCapabilities(contributes).includes('marks'));
+  }
 });
 
 test('published OpenCode entrypoints load from an extracted archive without node_modules or OpenChamber', () => {

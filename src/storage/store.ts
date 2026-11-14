@@ -4,7 +4,7 @@ import type { Config, Event, State, Step, Turn } from '../core/types.js';
 import { ActivityStore } from './activities.js';
 import { openDatabase } from './database.js';
 import { alertSource, type ThresholdEvent } from './alerts.js';
-import type { AlertSettings } from '../core/alerts.js';
+import type { AlertSettings, ThresholdHit } from '../core/alerts.js';
 
 interface Statement {
   run(...values: any[]): unknown;
@@ -14,6 +14,7 @@ interface Statement {
 export interface Database { exec(sql: string): unknown; prepare(sql: string): Statement; close(): void }
 export interface StepQuery { limit?: number; offset?: number; scope?: 'all' | 'current' | 'recent'; lookback?: number; sort?: 'time' | 'growth'; maxTurn?: number }
 export interface AlertContext { directory: string; settings: () => AlertSettings }
+export interface ThresholdMarkRecord { sessionId: string; turn: number; at: number; hits: ThresholdHit[]; updated?: number; deleted?: true }
 
 /** SQLite provides crash-safe transactions and indexed pagination across short-lived Codex processes and long-lived OpenCode plugins. */
 export class Store {
@@ -31,7 +32,9 @@ export class Store {
       CREATE INDEX IF NOT EXISTS steps_growth ON steps(session,growth DESC,turn_number,number);
       CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS alert_outbox (id TEXT PRIMARY KEY,at INTEGER NOT NULL,acked INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS alert_outbox_order ON alert_outbox(at DESC,id DESC);`);
+      CREATE INDEX IF NOT EXISTS alert_outbox_order ON alert_outbox(at DESC,id DESC);
+      CREATE TABLE IF NOT EXISTS threshold_marks (session TEXT PRIMARY KEY,at INTEGER NOT NULL,data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS threshold_marks_order ON threshold_marks(at DESC,session) WHERE json_array_length(data,'$.hits')>0;`);
     this.activities = new ActivityStore(db, session => this.snapshot(session));
   }
 
@@ -89,6 +92,16 @@ export class Store {
         this.db.prepare('INSERT INTO events VALUES (?,?)').run(session, event.id);
       }
       this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session, JSON.stringify(monitor.state));
+      const turn = monitor.state.turn, current = monitor.state.alerting?.current;
+      const hits = current?.eligible && current.hasModel ? current.hits ?? [] : [];
+      // Only small current-turn projections are read by the persistent GUI service, never replay bodies or the notification outbox.
+      const previous = this.markState(session);
+      if (!previous?.deleted) {
+        const updated = events.reduce((at, event) => Math.max(at, event.at), previous?.updated ?? turn?.at ?? 0);
+        // Keep empty-hit records as clear-state evidence: an older source must not resurrect a moved session's obsolete mark.
+        const record: ThresholdMarkRecord = { sessionId: session, turn: turn?.number ?? 0, at: turn?.at ?? updated, updated, hits };
+        this.db.prepare('INSERT OR REPLACE INTO threshold_marks VALUES(?,?,?)').run(session, record.at, JSON.stringify(record));
+      }
       return monitor.state;
     });
   }
@@ -105,6 +118,24 @@ export class Store {
   }
 
   sessions(): string[] { return this.db.prepare('SELECT id FROM sessions ORDER BY id').all().map(row => row.id); }
+  private hasMarks(): boolean { return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='threshold_marks'").get(); }
+  markState(session: string): ThresholdMarkRecord | undefined {
+    if (!this.hasMarks()) return undefined;
+    const row = this.db.prepare('SELECT data FROM threshold_marks WHERE session=?').get(session);
+    return row ? JSON.parse(row.data) : undefined;
+  }
+  clearMark(session: string, at: number): void {
+    // Session IDs are not reused. Retain a tombstone to suppress older source copies and delayed terminal events, not to erase replay evidence.
+    const record: ThresholdMarkRecord = { sessionId: session, turn: this.snapshot(session)?.turn?.number ?? 0, at, updated: at, hits: [], deleted: true };
+    this.db.prepare('INSERT OR REPLACE INTO threshold_marks VALUES(?,?,?)').run(session, at, JSON.stringify(record));
+  }
+  marks(limit = 200, after?: Pick<ThresholdMarkRecord, 'at' | 'sessionId'>): ThresholdMarkRecord[] {
+    // Read-only service connections must not migrate an old backend or invent its historical threshold settings.
+    if (!this.hasMarks()) return [];
+    const size = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const cursor = after ? ' AND (at<? OR (at=? AND session>?))' : '';
+    return this.db.prepare(`SELECT data FROM threshold_marks WHERE json_array_length(data,'$.hits')>0${cursor} ORDER BY at DESC,session LIMIT ?`).all(...(after ? [after.at, after.at, after.sessionId] : []), size).map(row => JSON.parse(row.data));
+  }
   settings(session: string): Config { return configure({ ...this.config, ...this.get<Partial<Config>>(`settings:${session}`), ...this.alertContext?.settings() }); }
   setSettings(session: string, input: Partial<Config>): Config {
     return this.atomic(() => {

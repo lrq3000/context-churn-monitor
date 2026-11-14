@@ -214,6 +214,18 @@ for (const runtime of ['openai-compatible', 'openai', 'anthropic']) test(`instal
     for (let i = 0; i < 300; i++) { resultJob = await monitor('/analysis/read', { id: failed.id }); if (resultJob.status !== 'consumed') break; await delay(100); }
     assert.equal(resultJob.status, 'uncertain');
     assert.equal(providerRequests.length - requestCount, 1, 'One consent must permit only one outgoing provider attempt, including retryable HTTP failures');
+    if (runtime === 'openai-compatible') {
+      const database = readdirSync(join(profile, 'monitor', 'replay-v2')).find(name => name.endsWith('.sqlite'))!;
+      const captured = await Store.open(join(profile, 'monitor', 'replay-v2', database), {}, true);
+      try {
+        assert.ok(captured.marks().some(mark => mark.sessionId === sessionID), 'The real primary turn must have a qualifying mark projection before deletion');
+        const removed = await fetch(`http://127.0.0.1:${port}/api/session/${sessionID}`, { method: 'DELETE', headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` } });
+        assert.ok(removed.ok, `Fixture session deletion returned ${removed.status}`);
+        for (let i = 0; i < 50 && !captured.markState(sessionID)?.deleted; i++) await delay(50);
+        assert.equal(captured.markState(sessionID)?.deleted, true, 'Native deletion must reach the subscribed adapter and release mark capacity');
+        assert.ok(captured.snapshot(sessionID), 'Deleting a host session must not erase retained replay evidence');
+      } finally { captured.close(); }
+    }
   } finally {
     // The Windows package-manager shim launches a second executable which inherits pipes. Killing only the shim leaves the test hung.
     if (process.platform === 'win32' && child.pid) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });

@@ -1,10 +1,13 @@
 import type { Alert, Config, Ema, Event, Guard, MetricRecord, State } from './types.js';
 
 export interface AlertSettings { liveGrowth: number; liveCompactions: number; growthThreshold: number; compactionThreshold: number; minContextWindow: number }
+export interface ThresholdHit { metric: Alert['metric']; kind: Alert['kind']; value: number; threshold: number }
 type Guards = Record<'growth' | 'compactions', Guard>;
 interface AlertTurn extends MetricRecord {
   id: string; number: number; eligible: boolean; hasModel: boolean; ended: boolean;
   model?: string; capacity?: number; before: Ema; countBefore: number; recoveryBefore?: Guards;
+  /** First eligible hit of each metric/kind in this turn, independent of notification suppression. Optional for legacy snapshots. */
+  hits?: ThresholdHit[];
 }
 export interface AlertPolicyState {
   minimum: number; count: number; ema: Ema; guards: Guards; current?: AlertTurn; skipTurn?: string;
@@ -36,21 +39,40 @@ export class AlertPolicy {
     }
     t.growth = source.growth; t.compactions = source.compactions; t.quality = source.quality;
     if (source.ended !== undefined && !t.ended) this.complete();
-    if (!c.warnings || !t.eligible || !t.hasModel) return [];
+    if (!t.eligible || !t.hasModel) { t.hits = []; return []; }
+    const hits = this.thresholds();
+    t.hits ??= [];
+    for (const hit of hits) {
+      // A live turn still sees the previous completed EMA for notification compatibility, not as evidence about its own outcome.
+      if (hit.kind === 'ema' && !t.ended) continue;
+      if (!t.hits.some(old => old.metric === hit.metric && old.kind === hit.kind)) t.hits.push(hit);
+    }
+    if (!c.warnings) return [];
     const result: Alert[] = [], index = t.countBefore + 1;
     for (const metric of ['growth', 'compactions'] as const) {
       const guard = s.guards[metric];
       if (!guard.armed || index - guard.lastTurn < c.cooldownTurns) continue;
-      const average = s.ema[metric], live = t[metric];
-      const threshold = metric === 'growth' ? c.growthThreshold : c.compactionThreshold;
-      const liveThreshold = metric === 'growth' ? c.liveGrowth : c.liveCompactions;
-      const samples = metric === 'growth' ? s.ema.growthSamples : s.ema.compactionSamples;
-      const kind = live !== null && live >= liveThreshold ? 'live' : samples >= c.minSamples && average !== null && average >= threshold ? 'ema' : null;
-      if (!kind) continue;
-      result.push({ id: `${t.id}:${metric}`, metric, turn: t.number, value: (kind === 'live' ? live : average)!, threshold: kind === 'live' ? liveThreshold : threshold, model: t.model, capacity: t.capacity, kind, at: event.at });
+      // Live hits precede EMA hits, preserving the notification policy's existing priority.
+      const hit = hits.find(hit => hit.metric === metric);
+      if (!hit) continue;
+      result.push({ ...hit, id: `${t.id}:${metric}`, turn: t.number, model: t.model, capacity: t.capacity, at: event.at });
       guard.armed = false; guard.lastTurn = index; guard.below = 0;
     }
     return result;
+  }
+
+  /** Evaluate once for both marks and delivery; only delivery observes warnings/cooldown/rearm guards. */
+  private thresholds(): ThresholdHit[] {
+    const s = this.state, t = s.current!, c = this.settings, hits: ThresholdHit[] = [];
+    for (const metric of ['growth', 'compactions'] as const) {
+      const live = t[metric], average = s.ema[metric];
+      const liveThreshold = metric === 'growth' ? c.liveGrowth : c.liveCompactions;
+      const threshold = metric === 'growth' ? c.growthThreshold : c.compactionThreshold;
+      const samples = metric === 'growth' ? s.ema.growthSamples : s.ema.compactionSamples;
+      if (live !== null && live >= liveThreshold) hits.push({ metric, kind: 'live', value: live, threshold: liveThreshold });
+      if (samples >= c.minSamples && average !== null && average >= threshold) hits.push({ metric, kind: 'ema', value: average, threshold });
+    }
+    return hits;
   }
 
   private reopen(): void {

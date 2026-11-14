@@ -48,7 +48,7 @@ test('replay filters, expands, preserves state and exports without invoking a mo
         const m=e.data;if(!m.channel)return;
         const answer=(type,payload)=>e.source.postMessage({channel:m.channel,v:m.v,type,id:m.id,ok:true,payload},'*');
         if(m.type==='hello'){
-          answer('ready',{directory:'/project',session:{id:'s',title:'Fixture',busy:false},surface:'panel',connection:{connected:false,account:null},settings:{},item:null,theme:{mode:'light',tokens:{background:'#ffffff',foreground:'#1f2937',elevated:'#ffffff',elevatedForeground:'#1f2937',muted:'#64748b',mutedSurface:'#f1f5f9',subtle:'#f8fafc',border:'#dbe2ea',hover:'#e2e8f0',active:'#dbeafe',primary:'#2563eb',primaryForeground:'#ffffff',primaryText:'#1f2937',successText:'#15754a',warningText:'#925f13',errorText:'#b91c1c',infoText:'#245fae',font:'system-ui',mono:'monospace',radius:'6px'}}});return;
+          answer('ready',{directory:'/project',session:{id:'s',title:'Fixture',busy:false},surface:'panel',device:{formFactor:innerWidth<600?'phone':'desktop',pointer:innerWidth<600?'coarse':'fine',insets:{top:0,right:0,bottom:innerWidth<600?34:0,left:0},keyboard:0},connection:{connected:false,account:null},settings:{},item:null,theme:{mode:'light',tokens:{background:'#ffffff',foreground:'#1f2937',elevated:'#ffffff',elevatedForeground:'#1f2937',muted:'#64748b',mutedSurface:'#f1f5f9',subtle:'#f8fafc',border:'#dbe2ea',hover:'#e2e8f0',active:'#dbeafe',primary:'#2563eb',primaryForeground:'#ffffff',primaryText:'#1f2937',successText:'#15754a',warningText:'#925f13',errorText:'#b91c1c',infoText:'#245fae',font:'system-ui',mono:'monospace',radius:'6px'}}});return;
         }
         window.calls.push(m.type);
         if(m.type==='service-request'){
@@ -140,9 +140,25 @@ test('replay filters, expands, preserves state and exports without invoking a mo
     await page.evaluate(() => { const iframe = document.querySelector('iframe')!; iframe.style.height = `${iframe.contentDocument!.body.scrollHeight + 30}px`; });
     await page.screenshot({ path: join(root, 'desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    assert.equal(await page.title(), 'Context Monitor QA');
+    await frame.locator('[data-activity="sample2"]').waitFor();
+    await frame.locator('[data-activity="sample2"] > summary').click();
+    await frame.locator('[data-activity="sample2"] .activity-body').filter({ hasText: 'Expected updated descriptor' }).waitFor();
+    await frame.locator('.request-tech > summary').first().click();
+    assert.equal(await frame.locator('.request-tech').first().evaluate(element => (element as HTMLDetailsElement).open), true, 'Phone panels retain full request diagnostics');
+    await frame.getByLabel('Step details', { exact: true }).uncheck();
+    assert.equal(await frame.locator('#report').isHidden(), true);
+    await frame.getByLabel('Step details', { exact: true }).check();
+    assert.equal(await frame.locator('#report').isVisible(), true);
+    await frame.getByRole('button', { name: 'View steps' }).click();
+    await page.waitForFunction(() => (window as any).calls.includes('open-surface'));
     await page.evaluate(() => { const iframe = document.querySelector('iframe')!; iframe.style.height = `${iframe.contentDocument!.body.scrollHeight + 30}px`; });
     await page.screenshot({ path: join(root, 'mobile.png'), fullPage: true });
     assert.equal(await frame.locator('body').evaluate(e => e.scrollWidth <= window.innerWidth), true);
+    await page.setViewportSize({ width: 360, height: 800 });
+    assert.equal(await frame.locator('body').evaluate(e => e.scrollWidth <= window.innerWidth), true, 'Expanded details must also fit narrow phones');
+    await page.setViewportSize({ width: 390, height: 844 });
     assert.deepEqual(errors, []);
     console.log(`Replay UI screenshots: ${root}`);
     assert.ok(!requests.some(path => path.startsWith('/analysis/run')));

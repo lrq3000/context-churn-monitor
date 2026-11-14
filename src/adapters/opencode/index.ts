@@ -59,7 +59,7 @@ export default {
     const types = ['session.inbox.enqueued', 'session.inbox.delivered', 'session.step.started', 'session.step.ended', 'session.step.failed', 'session.compaction.started', 'session.compaction.delta', 'session.compaction.ended', 'session.compaction.failed', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.tool.input.started', 'session.tool.input.delta', 'session.tool.input.ended', 'session.tool.called', 'session.tool.progress', 'session.tool.success', 'session.tool.failed', 'session.text.started', 'session.text.delta', 'session.text.ended', 'session.reasoning.started', 'session.reasoning.delta', 'session.reasoning.ended', 'session.skill.activated', 'session.shell.started', 'session.shell.ended', 'session.retry.scheduled', 'session.synthetic', 'session.instructions.updated', 'session.agent.selected', 'session.model.selected', 'session.moved', 'session.revert.committed', 'model.updated'] as const;
     const task = (async () => {
       try {
-        for await (const event of ctx.event.subscribe({ types: [...types], signal: controller.signal })) {
+        for await (const event of ctx.event.subscribe({ types: ['session.deleted', ...types], signal: controller.signal })) {
           if (event.type === 'model.updated') { await refreshModels(); continue; }
           if (event.location && 'directory' in event.location && event.location.directory !== directory) continue;
           try {
