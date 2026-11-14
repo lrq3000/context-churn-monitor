@@ -1,6 +1,6 @@
 node_modules/
-dist/
-openchamber/panel/app.js
-openchamber/service.cjs
+# Git installations are never compiled by OpenChamber; ship runtime JavaScript, not declarations.
+dist/**/*.d.ts
+.worktrees/
 *.tsbuildinfo
 test-results/

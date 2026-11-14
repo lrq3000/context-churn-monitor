@@ -1,0 +1,26 @@
+name: Validate installation bundles
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          CONTEXT_MONITOR_TEST_TMP: ${{ runner.temp }}
+      - run: npm run build
+      # OpenChamber consumes the Git snapshot without building; source and shipped bundles must agree.
+      - name: Reject stale or missing Git installation bundles
+        run: |
+          git diff --exit-code -- dist openchamber/panel/app.js openchamber/service.cjs
+          test -z "$(git ls-files --others --exclude-standard -- dist openchamber/panel/app.js openchamber/service.cjs)"
