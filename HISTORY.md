@@ -1,5 +1,9 @@
 # Source history and extraction
 
+## Git installation packaging fix (2026-11-14)
+
+Git snapshots now include the existing compiled JavaScript backend, classic-IIFE panel and bundled local service. Previously these files were ignored, so OpenChamber rejected a repository URL installation even though an npm archive or locally built folder worked. A dependency-free Git-index installation regression covers the unified root and legacy UI-only folder, and CI rejects stale or missing runtime bundles. The extension's version and OpenChamber ≥2.7.1 requirement are unchanged; no runtime behavior or permissions are added.
+
 Context Churn Monitor was extracted on 2026-11-10 from [lrq3000/lrq3000_agent_skills](https://github.com/lrq3000/lrq3000_agent_skills) at source commit `f138c926411e3f25e06ed84fb90e9f31e75e4c04`. Its independent source is now [lrq3000/context-churn-monitor](https://github.com/lrq3000/context-churn-monitor). The collection retains its original history and references this repository as a commit-pinned Git submodule configured to update from `main`; it does not follow the remote branch automatically.
 
 ## Retained content and attribution
