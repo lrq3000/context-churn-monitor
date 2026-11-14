@@ -1,6 +1,6 @@
 # Context Churn Monitor
 
-Deterministic context-growth and compaction monitoring with a readable chronological activity replay for OpenCode V2 and available modern Codex hook evidence. The optional OpenChamber extension shows titles, command/file previews, expandable captured text and request diagnostics, and can activate the backend and diagnostic skill in one installation. Monitoring, titles, filtering, exports and analysis preparation make no model calls. Optional analysis uses a frozen preview and single-use Run-button authorization.
+Deterministic context-growth and compaction monitoring and alerts with a readable chronological per-step activity replay for OpenCode V2 and available modern Codex hook evidence. The optional OpenChamber extension allows for better UI integration: it shows titles, command/file previews, a session mark icon, expandable captured text and request diagnostics, and can activate the backend and diagnostic skill in one installation, on both Desktop, WebUI and mobile (Android and iOS). Monitoring, titles, filtering, exports and analysis preparation make no model calls, the overhead is negligible CPU per step. Optional analysis uses a frozen preview and single-use Run-button authorization to call the small LLM model in OpenChamber to run an analysis to determine what steps consumed too much context and why.
 
 ## Installation units and runtime status
 
