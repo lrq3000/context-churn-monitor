@@ -37,8 +37,8 @@
 - [x] Adjust `.gitignore`, run `npm run build`, and stage the approved runtime files so the Git-indexed regression can pass.
 - [x] Add CI with `npm ci`, `npm run typecheck`, `npm test`, and a post-build `git diff --exit-code` check for tracked runtime freshness; document Git installation and the existing version floor.
 - [x] Run the regression, `npm run typecheck`, and `npm test`, with temporary outputs retained in the approved temporary directory.
-- [ ] Request fresh-context read-only validation and address verified findings within scope.
-- [ ] Inspect the diff, stage only approved files, create a conventional local commit with OpenCode/model attribution, and verify the commit and clean branch state.
+- [x] Request fresh-context read-only validation and address verified findings within scope.
+- [x] Inspect the diff, stage only approved files, create a conventional local commit with OpenCode/model attribution, and verify the commit and clean branch state.
 
 ## Execution record
 
@@ -47,3 +47,9 @@ Pre-flight: no shared interfaces; this is one cohesive packaging milestone.
 The focused baseline passed 12 tests. All three new Git-install tests failed before implementation with missing `app.js`, `service.cjs`, and `dist/reports/export-worker.js`. After staging the 35 generated runtime JavaScript files, all three passed, including both SDK extension-checker runs and the dependency-free backend import. `npm run typecheck` passed. `npm test` passed all 114 tests with no failures or skips on Node.js v24.22.2; its retained log is `C:/Users/33632/AppData/Local/Temp/opencode/context-churn-git-install-tests.log`.
 
 Existing locked dependencies were copied into this isolated worktree without downloading anything so esbuild's dependency-path comments match a normal standalone installation. CI uses the validated Node.js 24 major. The Git index is deliberately the fixture source so checks can run before committing while still excluding every ignored build artifact.
+
+Implementation commit: `07da0dd` (`fix(openchamber): ship prebuilt runtime for Git installations`). The full suite was rerun after committing: 114/114 passed, no failures or skips. A dependency-free local clone of this commit contained every required runtime entry, and the exact CI guard accepted its clean state and rejected deliberately stale and untracked runtime files. This fixture remains at `C:/Users/33632/AppData/Local/Temp/opencode/context-churn-bundle-freshness-ZwHBz7`; the final suite log is `C:/Users/33632/AppData/Local/Temp/opencode/context-churn-git-install-final-tests.log`.
+
+Final fresh-context read-only review of `809a604..07da0dd`: ready to merge; no critical, important, or minor findings. The reviewer independently verified the tracked runtime dependency closure, root and legacy installation paths, and exact panel/service agreement with in-memory esbuild output. No runtime fix pass was needed.
+
+Live host integration remains unverified: the installed OpenChamber is 2.7.0 while the unchanged source contract requires ≥2.7.1. Perform a Git-URL installation smoke test on a supported host before release. No upgrade or live registration was authorized or performed. The feature branch and its worktree are retained; merging, pushing, publishing and cleanup require a new authorization.
