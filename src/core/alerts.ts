@@ -42,7 +42,11 @@ export class AlertPolicy {
     if (!t.eligible || !t.hasModel) { t.hits = []; return []; }
     const hits = this.thresholds();
     t.hits ??= [];
-    for (const hit of hits) if (!t.hits.some(old => old.metric === hit.metric && old.kind === hit.kind)) t.hits.push(hit);
+    for (const hit of hits) {
+      // A live turn still sees the previous completed EMA for notification compatibility, not as evidence about its own outcome.
+      if (hit.kind === 'ema' && !t.ended) continue;
+      if (!t.hits.some(old => old.metric === hit.metric && old.kind === hit.kind)) t.hits.push(hit);
+    }
     if (!c.warnings) return [];
     const result: Alert[] = [], index = t.countBefore + 1;
     for (const metric of ['growth', 'compactions'] as const) {

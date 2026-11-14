@@ -55,6 +55,17 @@ test('eligible EMA hits require minimum samples and are captured on completion',
   }
 });
 
+test('a new live turn cannot inherit the preceding completed EMA threshold hit', () => {
+  const f = new TurnFixture({ warnings: false, span: 1, minSamples: 1, liveCompactions: 99, compactionThreshold: 1 });
+  f.turn('high'); f.compact(); f.send({ type: 'complete' });
+  assert.equal(f.hits()[0]?.kind, 'ema');
+  f.turn('clean');
+  assert.deepEqual(f.hits(), [], 'The preceding completed EMA is not evidence about this live turn');
+  f.send({ type: 'complete' });
+  assert.equal(f.monitor.state.alerting?.ema.compactions, 0);
+  assert.deepEqual(f.hits(), []);
+});
+
 test('growth and compaction live and EMA thresholds can all contribute to one turn', () => {
   const f = new TurnFixture({ warnings: false, minSamples: 1, liveGrowth: 80, growthThreshold: 80, compactionThreshold: 2 });
   f.turn('both', 100000);
@@ -97,7 +108,7 @@ test('indexed projections survive restart independently of notifications and dis
     ]);
     assert.deepEqual(store.pendingAlerts(), []);
     store.close(); store = await Store.open(path, {}, true);
-    assert.deepEqual(store.marks(), [{ sessionId: 'session', turn: 1, at: 10, hits: [{ metric: 'compactions', kind: 'live', value: 2, threshold: 2 }] }]);
+    assert.deepEqual(store.marks(), [{ sessionId: 'session', turn: 1, at: 10, updated: 13, hits: [{ metric: 'compactions', kind: 'live', value: 2, threshold: 2 }] }]);
     store.close(); store = await Store.open(path, { warnings: false });
     store.ingest('session', [{ type: 'turn', id: 'new', turnId: 'new', at: 20 }]);
     assert.deepEqual(store.marks(), []);

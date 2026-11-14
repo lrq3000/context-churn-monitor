@@ -44,6 +44,11 @@ export class OpenCodeAdapter {
     if (typeof session !== 'string' || !event.id) return;
     this.store.atomic(() => {
       if (this.store.get(`seen:opencode:${event.id}`)) return;
+      if (event.type === 'session.deleted') {
+        this.store.clearMark(session, event.created);
+        this.store.set(`seen:opencode:${event.id}`, true);
+        return;
+      }
       const events: Event[] = [];
       const emit = (value: any) => events.push({ id: `${event.id}:${events.length}`, at: event.created, ...value });
       switch (event.type) {
