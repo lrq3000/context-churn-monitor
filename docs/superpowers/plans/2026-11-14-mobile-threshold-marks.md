@@ -45,10 +45,10 @@
 
 **Interfaces:** Export `ThresholdHit` (`metric`, `kind`, `value`, `threshold`) and persist optional current-turn hits in `AlertPolicyState`. Export `ThresholdMarkRecord` (`sessionId`, `turn`, `at`, `hits`) from storage. `Store.marks(limit?: number): ThresholdMarkRecord[]` returns newest marked sessions, bounded to 200, or [] for a pre-projection read-only database.
 
-- [ ] Write failing tests for inclusive live and EMA thresholds, minSamples, warnings disabled, cooldown/rearm, eligibility loss, reset, reopen, interrupted/completed turns and persisted projections independent of notification history.
-- [ ] Run `node --import tsx --test tests/marks.test.ts` and confirm the expected new-interface failures.
-- [ ] Share threshold evaluation with notification emission, but capture hits before suppression. Maintain a per-session indexed projection in the same ingestion transaction; remove it on a new or ineligible turn. Keep legacy states valid.
-- [ ] Run marks, core, alerts, storage and alert-history tests plus typechecking; inspect the diff and commit `feat(monitor): persist latest-turn threshold hits independently of alerts`.
+- [x] Write failing tests for inclusive live and EMA thresholds, minSamples, warnings disabled, cooldown/rearm, eligibility loss, reset, reopen, interrupted/completed turns and persisted projections independent of notification history.
+- [x] Run `node --import tsx --test tests/marks.test.ts` and confirm the expected new-interface failures.
+- [x] Share threshold evaluation with notification emission, but capture hits before suppression. Maintain a per-session indexed projection in the same ingestion transaction; remove it on a new or ineligible turn. Keep legacy states valid.
+- [x] Run marks, core, alerts, storage and alert-history tests plus typechecking; inspect the diff and commit `feat(monitor): persist latest-turn threshold hits independently of alerts`.
 
 ### Task 3: Service-host reconciliation and mobile verification
 
@@ -68,3 +68,4 @@
 - Ruling: Track the Windows inline execution ledger here rather than invoking Unix workspace scripts that would add unapproved scratch/ignore paths; all durable decisions remain in this committed plan. No product behavior changes.
 - Baseline: 20 core/alerts/storage tests passed before product edits.
 - Task 1: RED confirmed missing mobile opt-in and old host floor; a missing local SDK license was a fresh-worktree setup issue resolved by the approved install. GREEN: packaging 9/9, typecheck exit 0, full `npm test` 93/93. npm reports 24 moderate dependency advisories; no unrelated dependency fixes were attempted.
+- Task 2: RED 7/7 expected failures for missing hits/projection API. GREEN: 38 focused tests, typecheck exit 0, full `npm test` 100/100. Task 1 committed as `f78958d`; Task 2 preserves notification behavior while adding current-turn-only indexed projections.
