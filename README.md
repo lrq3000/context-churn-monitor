@@ -1,6 +1,8 @@
 # Context Churn Monitor
 
-Context Churn Monitor helps you spot and diagnose **context sinks** in AI agent workflows. It warns about high context growth or repeated compactions, then gives you a debugger-like replay to investigate what happened step-by-step, call-by-call. The backend supports OpenCode V2 and can use available modern Codex hook evidence. The [OpenChamber extension](#openchamber) brings monitoring, session marks and replay to desktop, web and mobile, and can activate the OpenCode backend and diagnostic skill in one installation.
+Context Churn Monitor helps you spot and diagnose **context sinks** in AI agent workflows. It warns about high context growth or repeated compactions, then gives you a debugger-like replay to investigate what happened step-by-step, call-by-call.
+
+The backend supports OpenCode V2 and can use available modern Codex hook evidence. The [OpenChamber extension](#openchamber) brings monitoring, session marks and replay to desktop, web and mobile, and can activate the OpenCode backend and diagnostic skill in one installation.
 
 Ask your agent to guide you through installing this extension:
 
