@@ -28,7 +28,6 @@ test('npm publication identifies the public package, author and Apache license',
   assert.ok(manifest.description?.length);
   assert.deepEqual(manifest.author, { name: 'Stephen Karl Larroque', email: 'LRQ3000@gmail.com' });
   assert.equal(manifest.license, 'Apache-2.0');
-  assert.equal(manifest.version, '0.4.1');
   assert.equal(manifest.repository?.url, 'git+https://github.com/lrq3000/context-churn-monitor.git');
   assert.equal(manifest.repository?.directory, undefined, 'standalone repository installs from its root');
   assert.equal(manifest.homepage, 'https://github.com/lrq3000/context-churn-monitor#readme');

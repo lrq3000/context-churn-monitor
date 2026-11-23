@@ -218,13 +218,13 @@ Publish only from the complete source directory after checking the tests and arc
 
 ## Source version and date records
 
-The backend package, root unified extension, portable manifest and legacy independently installable UI retain release version `0.4.1`; package-lock mirrors agree. The current source changes are unreleased: root/UI manifest metadata is updated `2026-11-14`, while the unchanged portable manifest record remains `2026-11-10`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. Configuration-only files inherit the plugin release: the settings schema adds `minContextWindow` in 0.3.0 without an independent version increment. Existing custom records in the schema, TypeScript configuration and hooks remain `1.0.0` / `2026-11-06` as historical artifact records, not current release or host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
+The backend package, root unified extension, portable manifest and legacy independently installable UI are versioned `0.4.2` in Git; package-lock mirrors agree. This patch keeps OpenChamber responsive during sidebar scans of busy SQLite stores. The Git version is not an npm publication. Root, UI and portable manifest records are updated `2026-11-23`. The unchanged diagnostic skill is `1.1.0`, updated `2026-11-07`; all creation dates remain `2026-11-03`. Configuration-only files inherit the plugin release: the settings schema adds `minContextWindow` in 0.3.0 without an independent version increment. Existing custom records in the schema, TypeScript configuration and hooks remain `1.0.0` / `2026-11-06` as historical artifact records, not current release or host API versions. Creation dates retain the oldest credible filesystem birth/Git date after UTC normalization.
 
 The [portable manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json) rejects a root `metadata` property; arbitrary root metadata in the hook file is not an established host contract. The user-approved records for those two files therefore live here, outside their runtime configuration. The hook record was added on the recorded update date; hook commands themselves were not changed by this revision.
 
 ```json
 {
-  "plugin.json": { "metadata": { "version": "0.4.1", "creation": "2026-11-03", "last_updated": "2026-11-10" } },
+  "plugin.json": { "metadata": { "version": "0.4.2", "creation": "2026-11-03", "last_updated": "2026-11-23" } },
   "hooks/hooks.json": { "metadata": { "version": "1.0.0", "creation": "2026-11-03", "last_updated": "2026-11-06" } }
 }
 ```

@@ -1,6 +1,6 @@
 {
   "name": "context-churn-monitor",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Context-growth and compaction monitoring with activity replay for OpenCode V2, Codex hooks and an optional OpenChamber interface",
   "author": {
     "name": "Stephen Karl Larroque",
@@ -25,9 +25,9 @@
     "monitoring"
   ],
   "metadata": {
-    "version": "0.4.1",
+    "version": "0.4.2",
     "creation": "2026-11-03",
-    "last_updated": "2026-11-14"
+    "last_updated": "2026-11-23"
   },
   "publishConfig": {
     "access": "public",
