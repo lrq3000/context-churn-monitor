@@ -183,6 +183,36 @@ test('unreadable and legacy sources create no database or false marks and source
   } finally { f.close(); }
 });
 
+test('a store locked after validation does not prevent healthy marks and recovers on the next poll', async t => {
+  const f = await MarkFixture.open();
+  try {
+    const healthy = await f.source(), busy = await f.source();
+    f.qualify(healthy, 'healthy'); f.qualify(busy, 'busy');
+    busy.db.exec('PRAGMA journal_mode=DELETE');
+    assert.equal(busy.db.prepare('PRAGMA journal_mode').get().journal_mode, 'delete');
+    const sources = f.history.sources.bind(f.history);
+    let locked = false;
+    // Acquire a real SQLite lock just after the registry iterator has opened/validated both sources.
+    const timing = t.mock.method(f.history, 'sources', (after?: string) => {
+      const page = sources(after);
+      if (after && !page.length) { busy.db.exec('BEGIN EXCLUSIVE'); locked = true; }
+      return page;
+    });
+    const marks = f.reconciler();
+    try {
+      await marks.refresh();
+      assert.equal(locked, true);
+      assert.deepEqual([...f.visible.keys()], ['healthy']);
+    } finally {
+      timing.mock.restore();
+      if (locked) busy.db.exec('ROLLBACK');
+    }
+    await marks.refresh();
+    assert.deepEqual([...f.visible.keys()].sort(), ['busy', 'healthy']);
+    await marks.stop();
+  } finally { f.close(); }
+});
+
 test('concurrent refreshes share one run and stopping the service prevents later callbacks', async () => {
   const f = await MarkFixture.open();
   try {

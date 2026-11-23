@@ -20,8 +20,8 @@ export interface ThresholdMarkRecord { sessionId: string; turn: number; at: numb
 export class Store {
   readonly activities: ActivityStore;
   private depth = 0;
-  private constructor(readonly db: Database, private readonly config: Partial<Config>, readonly path: string, readOnly = false, private readonly alertContext?: AlertContext) {
-    if (readOnly) { db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=3000;'); this.activities = new ActivityStore(db, session => this.snapshot(session), true); return; }
+  private constructor(readonly db: Database, private readonly config: Partial<Config>, readonly path: string, readOnly = false, private readonly alertContext?: AlertContext, readBusyTimeout: 0 | 3000 = 3000) {
+    if (readOnly) { db.exec(`PRAGMA query_only=ON; PRAGMA busy_timeout=${readBusyTimeout};`); this.activities = new ActivityStore(db, session => this.snapshot(session), true); return; }
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (session TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(session,id));
@@ -41,6 +41,13 @@ export class Store {
   static async open(path: string, config: Partial<Config> = {}, readOnly = false, alertContext?: AlertContext): Promise<Store> {
     configure(config);
     return new Store(await openDatabase(path, readOnly), config, path, readOnly, alertContext);
+  }
+
+  /** Sidebar polling is best-effort and shares the service's HTTP thread. A lock must not block that thread for seconds per source. */
+  static async openMarkSource(path: string): Promise<Store> {
+    const db = await openDatabase(path, true);
+    try { return new Store(db, {}, path, true, undefined, 0); }
+    catch (error) { db.close(); throw error; }
   }
 
   /** Deferred read transaction pins a WAL snapshot without reserving the writer. Use on a separate read-only connection, never around monitoring ingestion. */

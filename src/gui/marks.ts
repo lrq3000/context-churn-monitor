@@ -1,6 +1,10 @@
 import { SERVICE_MARKS_MAX, SERVICE_MARK_RATE_MAX, SERVICE_MARK_TEXT_MAX, type ServiceHost, type ServiceMark } from '@openchamber/sdk';
+import { setImmediate as yieldToIO } from 'node:timers/promises';
 import type { AlertHistory } from '../storage/alerts.js';
 import { Store, type ThresholdMarkRecord } from '../storage/store.js';
+
+interface MarkSource { id: string; store: Store; failed?: true }
+interface MarkCandidate { record: ThresholdMarkRecord; source: MarkSource }
 
 /** Native marks outlive panels, not service processes. Rebuild from indexed metadata and never infer hits from notification delivery. */
 export class SessionMarks {
@@ -40,52 +44,76 @@ export class SessionMarks {
   }
 
   private async read(): Promise<ThresholdMarkRecord[]> {
-    const stores: Store[] = [];
-    let afterSource = '', candidates = new Map<string, ThresholdMarkRecord>();
+    const stores: MarkSource[] = [];
+    const newest = (a: MarkCandidate, b: MarkCandidate) => SessionMarks.newest(a.record, b.record);
+    let afterSource = '', candidates = new Map<string, MarkCandidate>();
+    const fail = (source: MarkSource) => {
+      source.failed = true;
+      this.sourceUnavailable(source.id);
+      for (const [session, candidate] of candidates) if (candidate.source === source) candidates.delete(session);
+    };
     try {
       for (;;) {
         const sources = this.history.sources(afterSource);
         if (!sources.length || this.stopped) break;
         for (const source of sources) {
+          // A cached dynamic import only yields to microtasks, not to incoming HTTP health probes and panel requests.
+          await yieldToIO();
+          if (this.stopped) return [];
           let store: Store | undefined;
           try {
-            store = await Store.open(source.path, {}, true);
+            store = await Store.openMarkSource(source.path);
             store.marks(1); // Validate the projection read before accepting this source; legacy stores yield an empty page.
-            stores.push(store);
-            this.failedSources.delete(source.id);
+            stores.push({ id: source.id, store });
           } catch {
             store?.close();
-            if (!this.failedSources.has(source.id)) console.warn('[context-monitor] Sidebar marks could not read a registered store; its unverified marks will be removed.');
-            this.failedSources.add(source.id);
+            this.sourceUnavailable(source.id);
           }
         }
         afterSource = sources.at(-1)!.id;
       }
-      for (const store of stores) {
+      for (const source of stores) {
         let after: Pick<ThresholdMarkRecord, 'at' | 'sessionId'> | undefined;
-        for (;;) {
+        while (!source.failed) {
           if (this.stopped) return [];
-          const page = store.marks(SERVICE_MARKS_MAX, after);
+          let page: ThresholdMarkRecord[];
+          try { page = source.store.marks(SERVICE_MARKS_MAX, after); }
+          catch { fail(source); break; }
           for (const record of page) {
-            let latest = record;
+            await yieldToIO();
+            if (this.stopped) return [];
+            let latest = record, latestSource = source;
             // Indexed point reads include clear/deletion evidence in other locations, without scanning every session or transcript.
             for (const other of stores) {
-              const state = other.markState(record.sessionId);
-              if (state && (state.deleted || (!latest.deleted && (state.at > latest.at || (state.at === latest.at && (state.updated ?? state.at) > (latest.updated ?? latest.at)))))) latest = state;
+              if (other.failed) continue;
+              let state: ThresholdMarkRecord | undefined;
+              try { state = other.store.markState(record.sessionId); }
+              catch { fail(other); continue; }
+              if (state && (state.deleted || (!latest.deleted && (state.at > latest.at || (state.at === latest.at && (state.updated ?? state.at) > (latest.updated ?? latest.at)))))) {
+                latest = state;
+                latestSource = other;
+              }
             }
-            if (!latest.deleted && latest.hits.length) candidates.set(latest.sessionId, latest);
+            if (source.failed) break;
+            if (!latest.deleted && latest.hits.length) candidates.set(latest.sessionId, { record: latest, source: latestSource });
             else candidates.delete(record.sessionId);
           }
           // Keep at most two positive pages in memory. Cleared duplicates do not occupy the host's newest-200 selection.
-          candidates = new Map([...candidates.values()].sort(SessionMarks.newest).slice(0, SERVICE_MARKS_MAX).map(record => [record.sessionId, record]));
+          candidates = new Map([...candidates.values()].sort(newest).slice(0, SERVICE_MARKS_MAX).map(candidate => [candidate.record.sessionId, candidate]));
           after = page.at(-1);
-          if (page.length < SERVICE_MARKS_MAX || (candidates.size === SERVICE_MARKS_MAX && after!.at < [...candidates.values()].at(-1)!.at)) break;
+          if (page.length < SERVICE_MARKS_MAX || (candidates.size === SERVICE_MARKS_MAX && after!.at < [...candidates.values()].at(-1)!.record.at)) break;
         }
       }
-      return [...candidates.values()].sort(SessionMarks.newest);
+      for (const source of stores) if (!source.failed) this.failedSources.delete(source.id);
+      return [...candidates.values()].sort(newest).map(candidate => candidate.record);
     } finally {
-      for (const store of stores) store.close();
+      for (const { store } of stores) store.close();
     }
+  }
+
+  private sourceUnavailable(id: string): void {
+    if (!this.failedSources.has(id)) console.warn('[context-monitor] Sidebar marks could not read a registered store; its unverified marks will be removed.');
+    this.failedSources.add(id);
   }
 
   private static newest(a: ThresholdMarkRecord, b: ThresholdMarkRecord): number { return b.at - a.at || a.sessionId.localeCompare(b.sessionId); }

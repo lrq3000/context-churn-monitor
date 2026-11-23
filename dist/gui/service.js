@@ -44,8 +44,8 @@ async function start(token) {
             respond(response, 400, { error: error instanceof Error ? error.message : 'Request failed' });
         }
     });
-    server.listen(port, '127.0.0.1');
-    marks.start();
+    // Bring up the authenticated HTTP listener before starting optional sidebar work.
+    server.listen(port, '127.0.0.1', () => marks.start());
     process.once('SIGTERM', () => { void marks.stop().then(() => server.close(() => history.close())); });
 }
 void start(token).catch(error => { console.error('[context-monitor] GUI service could not start', error); process.exitCode = 1; });

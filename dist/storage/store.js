@@ -11,13 +11,13 @@ export class Store {
     alertContext;
     activities;
     depth = 0;
-    constructor(db, config, path, readOnly = false, alertContext) {
+    constructor(db, config, path, readOnly = false, alertContext, readBusyTimeout = 3000) {
         this.db = db;
         this.config = config;
         this.path = path;
         this.alertContext = alertContext;
         if (readOnly) {
-            db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=3000;');
+            db.exec(`PRAGMA query_only=ON; PRAGMA busy_timeout=${readBusyTimeout};`);
             this.activities = new ActivityStore(db, session => this.snapshot(session), true);
             return;
         }
@@ -39,6 +39,17 @@ export class Store {
     static async open(path, config = {}, readOnly = false, alertContext) {
         configure(config);
         return new Store(await openDatabase(path, readOnly), config, path, readOnly, alertContext);
+    }
+    /** Sidebar polling is best-effort and shares the service's HTTP thread. A lock must not block that thread for seconds per source. */
+    static async openMarkSource(path) {
+        const db = await openDatabase(path, true);
+        try {
+            return new Store(db, {}, path, true, undefined, 0);
+        }
+        catch (error) {
+            db.close();
+            throw error;
+        }
     }
     /** Deferred read transaction pins a WAL snapshot without reserving the writer. Use on a separate read-only connection, never around monitoring ingestion. */
     readSnapshot(operation) {
