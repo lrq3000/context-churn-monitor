@@ -18,6 +18,8 @@ The same increase of 10,000 tokens takes up **20 percentage points** of a 50,000
 - **Find where context grew.** Open **View steps** for a chronological [replay and request diagnostics](#reports-storage-and-analysis). Compare growth between model requests with nearby tool calls and results, messages, visible reasoning and compactions. Revisit the captured details later in the panel or an HTML/JSON export.
 - **Decide what to change.** Inspect the evidence yourself or ask for an optional model-assisted diagnosis. Monitoring, replay, exports and analysis preparation make no model calls.
 
+To our knowledge, we are the first to coin this term of context sink. 
+
 ## What is Context Churn Monitor and how it works
 
 Context Churn Monitor is a deterministic context-growth and compaction monitoring and alerts with a readable chronological per-step activity replay for OpenCode V2 and available modern Codex hook evidence. It does not require any generative AI for its main functionalities, and the CPU and RAM and storage overhead are negligible.
