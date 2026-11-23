@@ -1,6 +1,30 @@
 # Context Churn Monitor
 
-Deterministic context-growth and compaction monitoring and alerts with a readable chronological per-step activity replay for OpenCode V2 and available modern Codex hook evidence. The optional OpenChamber extension allows for better UI integration: it shows titles, command/file previews, a session mark icon, expandable captured text and request diagnostics, and can activate the backend and diagnostic skill in one installation, on both Desktop, WebUI and mobile (Android and iOS). Monitoring, titles, filtering, exports and analysis preparation make no model calls, the overhead is negligible CPU per step. Optional analysis uses a frozen preview and single-use Run-button authorization to call the small LLM model in OpenChamber to run an analysis to determine what steps consumed too much context and why.
+Context Churn Monitor helps you spot and diagnose **context sinks** in AI agent workflows. It warns about high context growth or repeated compactions, then gives you a debugger-like replay to investigate what happened step-by-step, call-by-call. The backend supports OpenCode V2 and can use available modern Codex hook evidence. The [OpenChamber extension](#openchamber) brings monitoring, session marks and replay to desktop, web and mobile, and can activate the OpenCode backend and diagnostic skill in one installation.
+
+Ask your agent to guide you through installing this extension:
+
+```
+Install or guide me through the installation of https://github.com/lrq3000/context-churn-monitor
+```
+
+## What is a context sink?
+
+A **context sink** is an inefficient activity or workflow that eats up a disproportionate share of the active model’s context window without making comparable progress on the task. For example, an agent may read a large codebase or document collection, fill its context until the host compacts it, then reread much of the same material to recover details. That read → compact → reread loop can repeat within a turn, wasting context on work already done.
+
+The same increase of 10,000 tokens takes up **20 percentage points** of a 50,000-token window but only **5 percentage points** of a 200,000-token window. The monitor measures growth relative to the active model’s capacity, not just raw token counts or how full the window is at one instant. That lets accumulated growth reveal churn even when compaction repeatedly brings occupancy back down.
+
+- **Spot suspect turns.** Set separate [thresholds](#accounting-and-settings) for accumulated context growth and observed compactions. Live alerts flag high growth or repeated compactions during a turn; rolling averages across completed turns help surface persistent inefficiency. A threshold hit is a signal to investigate, not proof of a context sink.
+- **Find where context grew.** Open **View steps** for a chronological [replay and request diagnostics](#reports-storage-and-analysis). Compare growth between model requests with nearby tool calls and results, messages, visible reasoning and compactions. Revisit the captured details later in the panel or an HTML/JSON export.
+- **Decide what to change.** Inspect the evidence yourself or ask for an optional model-assisted diagnosis. Monitoring, replay, exports and analysis preparation make no model calls.
+
+## What is Context Churn Monitor and how it works
+
+Context Churn Monitor is a deterministic context-growth and compaction monitoring and alerts with a readable chronological per-step activity replay for OpenCode V2 and available modern Codex hook evidence. It does not require any generative AI for its main functionalities, and the CPU and RAM and storage overhead are negligible.
+
+It can work as an OpenCode V2 plugin or Codex hook plugin, or optionally as a full-blown OpenChamber extension which adds better UI integration: it shows titles, command/file previews, a session mark icon, expandable captured text and request diagnostics, and can activate the backend and diagnostic skill in one installation, on both Desktop, WebUI and mobile (Android and iOS).
+
+To get an automated analysis of analysis to determine what steps consumed too much context and why (where tokens sank, at what steps, at what point in time, what surrounding context), an optional traceback analysis can be done using the small LLM model configured in OpenChamber. It is quite inexpensive as this costs only one model call for the whole traceback and it uses a frozen preview, and it only runs on user request by clicking a button, never automatically.
 
 ## Installation units and runtime status
 
@@ -154,6 +178,8 @@ SQLite stores indexed activity metadata separately from complete host-exposed in
 **Fresh start:** release 0.2.0 uses a new `replay-v2/` namespace for active history, metrics, settings and analysis jobs. Existing alpha databases and exports remain inactive on disk; nothing is imported or deleted. Descriptor/pairing paths remain valid. This is a forward-only reset, not a migration or historical reconstruction.
 
 **Prepare analysis** freezes session, revision, turn bounds, selected route, budgets and quoted evidence without generation. **OpenChamber Small Model** is selected by default. **Run analysis (1 model invocation)** authorizes the prepared job; there is no separate checkbox. The input allowance uses a conservative one-UTF-8-byte-per-token estimate plus 512 tokens for the host envelope; it is not tokenizer-exact. Largest-growth request records share the allowance with chronological activity excerpts from the lookback; full local capture does not imply sending everything. Omitted records/text are disclosed. Authorization expires after ten minutes and is consumed transactionally before invocation. Concurrent submission, double-click, reconnect, error or unknown outcome never automatically retries a consumed job.
+
+Use the analysis to identify likely causes, such as repeated full reads or oversized tool results, and choose a practical way to avoid them. For a codebase, start with targeted reads or reuse a codebase onboarding map. For a large document collection, retrieve only the relevant passages from a searchable index or a retrieval-augmented generation (RAG) system; for material already captured in agent memory, a retrieval tool such as [MemPalace](https://github.com/mempalace/mempalace) is another option. These are workflow changes you can choose, not integrations the monitor installs or applies. Review the evidence preview for private content before sending it to a model.
 
 Configured and session-model analysis runs outside session history via OpenCode's experimental generation API. A temporary model alias supplies the output request-body cap without changing the session model. Because native generation internally retries, a one-use loopback relay consumes its forwarding allowance before the first provider request and refuses subsequent attempts, even after a transport failure. Redirects are not followed. This route requires an explicit provider/model `settings.baseURL`; dynamic account endpoints are unsupported rather than guessed. Native OpenAI-compatible, OpenAI Responses and Anthropic runtime fields and HTTP-503 one-attempt behavior have outgoing-request verification using local protocol fixtures on OpenCode 2.2.1. Other runtimes reject bounded analysis. A provider remains responsible for honoring its protocol limit.
 
