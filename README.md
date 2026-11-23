@@ -59,7 +59,7 @@ npm run build
 
 To install in OpenChamber it's very easy: just open the Settings dialog and go to `Extensions`, then add a new extension, and input this repository URL: `https://github.com/lrq3000/context-churn-monitor/` and click Import. Then, the extension will be downloaded and installed.
 
-The extension is updateable directly from the same interface, when this repository gets updated, OpenChamber will add a label in the top right corner of the extension's card with the new version available and offer to update.
+The extension is updateable directly from the same interface, when this repository gets updated, OpenChamber will add a label in the top right corner of the extension's card with the new version available and offer to update. If for some reason OpenChamber can't replace the files and breaks the update process, you can just delete the extension and reinstall it from the github URL.
 
 Since OpenChamber v2.7.1, plugins are supported on Android and iOS, as well as in the desktop and web interfaces. This interface support does not remove the backend, service, permission or host requirements below.
 
